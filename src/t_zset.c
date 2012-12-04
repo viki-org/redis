@@ -2220,11 +2220,12 @@ void vdiffstoreCommand(redisClient *c) {
     while (zuiNext(&src[0],&zval)) {
         tmp = zuiObjectFromValue(&zval);
         if (zuiFind(&src[1],&zval,&value) == 0) {
-            if (found++ >= offset && added++ < count) {
+            if (found++ >= offset && added < count) {
                 zslInsert(dstzset->zsl,zval.score,tmp);
                 incrRefCount(tmp); /* added to skiplist */
                 dictAdd(dstzset->dict,tmp,&zval.score);
                 incrRefCount(tmp); /* added to dictionary */
+                ++added;
             }
         }
     }
