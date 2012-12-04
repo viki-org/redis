@@ -834,7 +834,7 @@ void zsetConvert(robj *zobj, int encoding) {
 }
 
 /*-----------------------------------------------------------------------------
- * Sorted set commands 
+ * Sorted set commands
  *----------------------------------------------------------------------------*/
 
 /* This generic command implements both ZADD and ZINCRBY. */
@@ -2178,4 +2178,64 @@ void zrankCommand(redisClient *c) {
 
 void zrevrankCommand(redisClient *c) {
     zrankGenericCommand(c, 1);
+}
+
+
+void vdiffstoreCommand(redisClient *c) {
+    int touched = 0;
+    zsetopval zval;
+    zsetopsrc *src;
+    robj *tmp;
+    double value;
+
+    robj *dstkey = c->argv[1];
+    robj *dstobj = createZsetObject();
+    zset *dstzset = dstobj->ptr;
+
+    src = zcalloc(sizeof(zsetopsrc) * 2);
+    src[0].subject = lookupKey(c->db,c->argv[2]);
+    src[0].type = REDIS_ZSET;
+    if (src[0].subject != NULL) {
+        src[0].encoding = src[0].subject->encoding;
+    }
+    zuiInitIterator(&src[0]);
+
+    src[1].subject = lookupKey(c->db,c->argv[3]);
+    src[1].type = REDIS_SET;
+    if (src[1].subject != NULL) {
+        src[1].encoding = src[1].subject->encoding;
+    }
+    zuiInitIterator(&src[1]);
+
+    memset(&zval, 0, sizeof(zval));
+
+    while (zuiNext(&src[0],&zval)) {
+        tmp = zuiObjectFromValue(&zval);
+        if (zuiFind(&src[1],&zval,&value) == 0) {
+            zslInsert(dstzset->zsl,zval.score,tmp);
+            incrRefCount(tmp); /* added to skiplist */
+            dictAdd(dstzset->dict,tmp,&zval.score);
+            incrRefCount(tmp); /* added to dictionary */
+        }
+    }
+
+    zuiClearIterator(&src[0]);
+    zuiClearIterator(&src[1]);
+
+    if (dbDelete(c->db,dstkey)) {
+        signalModifiedKey(c->db,dstkey);
+        touched = 1;
+        server.dirty++;
+    }
+
+    if (dstzset->zsl->length) {
+        dbAdd(c->db,dstkey,dstobj);
+        addReplyLongLong(c,zsetLength(dstobj));
+        if (!touched) signalModifiedKey(c->db,dstkey);
+        server.dirty++;
+    } else {
+        decrRefCount(dstobj);
+        addReply(c,shared.czero);
+    }
+    zfree(src);
 }
