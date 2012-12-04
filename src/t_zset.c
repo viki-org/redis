@@ -2197,6 +2197,8 @@ void vdiffstoreCommand(redisClient *c) {
     src[0].type = REDIS_ZSET;
     if (src[0].subject != NULL) {
         src[0].encoding = src[0].subject->encoding;
+    } else {
+        goto vikidiffstorageend;
     }
     zuiInitIterator(&src[0]);
 
@@ -2228,6 +2230,7 @@ void vdiffstoreCommand(redisClient *c) {
         server.dirty++;
     }
 
+vikidiffstorageend:
     if (dstzset->zsl->length) {
         dbAdd(c->db,dstkey,dstobj);
         addReplyLongLong(c,zsetLength(dstobj));
