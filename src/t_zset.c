@@ -2183,10 +2183,13 @@ void zrevrankCommand(redisClient *c) {
 
 void vdiffstoreCommand(redisClient *c) {
     int touched = 0;
+    int found = 0;
+    int added = 0;
+    double value;
+    long offset, count;
     zsetopval zval;
     zsetopsrc *src;
     robj *tmp;
-    double value;
 
     robj *dstkey = c->argv[1];
     robj *dstobj = createZsetObject();
@@ -2194,30 +2197,35 @@ void vdiffstoreCommand(redisClient *c) {
 
     src = zcalloc(sizeof(zsetopsrc) * 2);
     src[0].subject = lookupKey(c->db,c->argv[2]);
-    src[0].type = REDIS_ZSET;
-    if (src[0].subject != NULL) {
-        src[0].encoding = src[0].subject->encoding;
-    } else {
+    if (src[0].subject == NULL) {
         goto vikidiffstorageend;
+    } else {
+        src[0].encoding = src[0].subject->encoding;
     }
+    src[0].type = REDIS_ZSET;
     zuiInitIterator(&src[0]);
 
     src[1].subject = lookupKey(c->db,c->argv[3]);
-    src[1].type = REDIS_SET;
     if (src[1].subject != NULL) {
         src[1].encoding = src[1].subject->encoding;
     }
+    src[1].type = REDIS_SET;
     zuiInitIterator(&src[1]);
+
+    getLongFromObjectOrReply(c, c->argv[4], &offset, NULL);
+    getLongFromObjectOrReply(c, c->argv[5], &count, NULL);
 
     memset(&zval, 0, sizeof(zval));
 
     while (zuiNext(&src[0],&zval)) {
         tmp = zuiObjectFromValue(&zval);
         if (zuiFind(&src[1],&zval,&value) == 0) {
-            zslInsert(dstzset->zsl,zval.score,tmp);
-            incrRefCount(tmp); /* added to skiplist */
-            dictAdd(dstzset->dict,tmp,&zval.score);
-            incrRefCount(tmp); /* added to dictionary */
+            if (found++ >= offset && added++ < count) {
+                zslInsert(dstzset->zsl,zval.score,tmp);
+                incrRefCount(tmp); /* added to skiplist */
+                dictAdd(dstzset->dict,tmp,&zval.score);
+                incrRefCount(tmp); /* added to dictionary */
+            }
         }
     }
 
@@ -2233,7 +2241,7 @@ void vdiffstoreCommand(redisClient *c) {
 vikidiffstorageend:
     if (dstzset->zsl->length) {
         dbAdd(c->db,dstkey,dstobj);
-        addReplyLongLong(c,zsetLength(dstobj));
+        addReplyLongLong(c,found);
         if (!touched) signalModifiedKey(c->db,dstkey);
         server.dirty++;
     } else {
