@@ -1,57 +1,6 @@
 #include "redis.h"
 #include <math.h>
 
-/* Store value retrieved from the iterator. */
-typedef struct {
-  int flags;
-  unsigned char _buf[32]; /* Private buffer. */
-  robj *ele;
-  unsigned char *estr;
-  unsigned int elen;
-  long long ell;
-  double score;
-} zsetopval;
-
-typedef struct {
-  robj *subject;
-  int type; /* Set, sorted set */
-  int encoding;
-  double weight;
-
-  union {
-    /* Set iterators. */
-    union _iterset {
-      struct {
-        intset *is;
-        int ii;
-      } is;
-      struct {
-        dict *dict;
-        dictIterator *di;
-        dictEntry *de;
-      } ht;
-    } set;
-
-    /* Sorted set iterators. */
-    union _iterzset {
-      struct {
-        unsigned char *zl;
-        unsigned char *eptr, *sptr;
-      } zl;
-      struct {
-        zset *zs;
-        zskiplistNode *node;
-      } sl;
-    } zset;
-  } iter;
-} zsetopsrc;
-
-void zuiInitIterator(zsetopsrc *op);
-int zuiNext(zsetopsrc *op, zsetopval *val);
-robj *zuiObjectFromValue(zsetopval *val);
-int zuiFind(zsetopsrc *op, zsetopval *val, double *score);
-void zuiClearIterator(zsetopsrc *op);
-
 int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags) {
   int i, num, *keys;
   REDIS_NOTUSED(cmd);
@@ -79,71 +28,75 @@ void vfindCommand(redisClient *c) {
   long offset, count, filter_count;
   void *replylen = NULL;
   char *k;
-  zsetopval zval;
-  zsetopsrc *zset;
-  robj *cap, *o, *tmp, **filters, *hash;
+  robj *cap, *o, *item, **filters, *hash, *zobj;
+  zset *zset;
+  zskiplist *zsl;
+  zskiplistNode *ln;
+  redisDb *db = c->db;
   robj *summary_field = createStringObject("summary", 7);
-
-  if ((getLongFromObjectOrReply(c, c->argv[3], &filter_count, NULL) != REDIS_OK)) { goto end; }
-  zset = zcalloc(sizeof(zsetopsrc));
-  filters = zmalloc(sizeof(robj*) * filter_count);
-
-  if ((zset->subject = lookupKeyReadOrReply(c, c->argv[1], shared.emptymultibulk)) == NULL || checkType(c, zset->subject, REDIS_ZSET)) { goto end; }
-  zset->encoding = zset->subject->encoding;
-  zset->type = REDIS_ZSET;
-
-  if ((cap = lookupKeyReadOrReply(c, c->argv[2], shared.emptymultibulk)) == NULL || checkType(c, cap, REDIS_SET)) { goto end; }
-
-  for(int i = 0; i < filter_count; i++) {
-    if ((filters[i] = lookupKeyReadOrReply(c, c->argv[i+4], shared.emptymultibulk)) == NULL || checkType(c, cap, REDIS_SET)) { goto end; }
-  }
-
-  if (!strcasecmp(c->argv[4 + filter_count]->ptr, "asc")) { desc = 0; }
-  if((getLongFromObjectOrReply(c, c->argv[5 + filter_count], &offset, NULL) != REDIS_OK)) { return; }
-  if((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &count, NULL) != REDIS_OK)) { return; }
-
-  zuiInitIterator(zset);
-  memset(&zval, 0, sizeof(zval));
 
   replylen = addDeferredMultiBulkLength(c);
 
-  while (zuiNext(zset, &zval)) {
-    tmp = zuiObjectFromValue(&zval);
+  if ((getLongFromObjectOrReply(c, c->argv[3], &filter_count, NULL) != REDIS_OK)) { goto end; }
+  filters = zmalloc(sizeof(robj*) * filter_count);
+
+  if ((zobj = lookupKey(db, c->argv[1])) == NULL || checkType(c, zobj, REDIS_ZSET)) { goto end; }
+  zsetConvert(zobj, REDIS_ENCODING_SKIPLIST);
+  zset = zobj->ptr;
+  zsl = zset->zsl;
+  ln = zsl->tail;
+
+  cap = lookupKey(db, c->argv[2]);
+
+  for(int i = 0; i < filter_count; i++) {
+    if ((filters[i] = lookupKey(db, c->argv[i+4])) == NULL || checkType(c, filters[i], REDIS_SET)) { goto end; }
+  }
+
+  if (!strcasecmp(c->argv[4 + filter_count]->ptr, "asc")) {
+    desc = 0;
+    ln = zsl->header->level[0].forward;
+  }
+  if((getLongFromObjectOrReply(c, c->argv[5 + filter_count], &offset, NULL) != REDIS_OK)) { return; }
+  if((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &count, NULL) != REDIS_OK)) { return; }
+
+
+  while(ln != NULL) {
+    item = ln->obj;
     skip = 0;
     for(int i = 0; i < filter_count; ++i) {
-      if (!setTypeIsMember(filters[i], tmp)) {
+      if (!setTypeIsMember(filters[i], item)) {
         skip = 1;
         break;
       }
     }
-    if (skip == 1 || setTypeIsMember(cap, tmp)) { continue; }
-
-    if (found++ >= offset && added < count) {
-      field_length = strlen(tmp->ptr);
-      hash = createStringObject(NULL, field_length + 2);
-      k = hash->ptr;
-      memcpy(k, "r:", 2);
-      memcpy(k + 2, tmp->ptr, field_length);
-      o = lookupKeyRead(c->db, hash);
-      if (o == NULL) {
-        //There is no summary data for the element
-        --found;
-      } else {
-        o = hashTypeGetObject(o, summary_field);
-        addReplyBulk(c, o);
-        decrRefCount(o);
-        ++added;
+    if (skip == 0 && (cap == NULL || !setTypeIsMember(cap, item))) {
+      if (found++ >= offset && added < count) {
+        field_length = strlen(item->ptr);
+        hash = createStringObject(NULL, field_length + 2);
+        k = hash->ptr;
+        memcpy(k, "r:", 2);
+        memcpy(k + 2, item->ptr, field_length);
+        o = lookupKey(db, hash);
+        if (o == NULL) {
+          //There is no summary data for the element
+          --found;
+        } else {
+          o = hashTypeGetObject(o, summary_field);
+          addReplyBulk(c, o);
+          decrRefCount(o);
+          ++added;
+        }
+        decrRefCount(hash);
       }
-      decrRefCount(hash);
     }
     if (found > 500 && added == count) { break; }
+
+    ln = desc ? ln->backward : ln->level[0].forward;
   }
 
-  addReplyLongLong(c, found);
-  zuiClearIterator(zset);
 end:
   zfree(filters);
-  zfree(zset);
   decrRefCount(summary_field);
-  setDeferredMultiBulkLength(c, replylen, added + 1);
+  addReplyLongLong(c, found);
+  setDeferredMultiBulkLength(c, replylen, added+1);
 }
