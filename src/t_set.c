@@ -496,7 +496,7 @@ void srandmemberWithCountCommand(redisClient *c) {
             size--;
         }
     }
-    
+
     /* CASE 4: We have a big set compared to the requested number of elements.
      * In this case we can simply get random elements from the set and add
      * to the temporary set, trying to eventually get enough unique elements
@@ -575,9 +575,7 @@ void sinterGenericCommand(redisClient *c, robj **setkeys, unsigned long setnum, 
     int encoding;
 
     for (j = 0; j < setnum; j++) {
-        robj *setobj = dstkey ?
-            lookupKeyWrite(c->db,setkeys[j]) :
-            lookupKeyRead(c->db,setkeys[j]);
+        robj *setobj = dstkey ? lookupKeyWrite(c->db,setkeys[j]) : lookupKeyRead(c->db,setkeys[j]);
         if (!setobj) {
             zfree(sets);
             if (dstkey) {

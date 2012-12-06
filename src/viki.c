@@ -3,47 +3,47 @@
 
 /* Store value retrieved from the iterator. */
 typedef struct {
-    int flags;
-    unsigned char _buf[32]; /* Private buffer. */
-    robj *ele;
-    unsigned char *estr;
-    unsigned int elen;
-    long long ell;
-    double score;
+  int flags;
+  unsigned char _buf[32]; /* Private buffer. */
+  robj *ele;
+  unsigned char *estr;
+  unsigned int elen;
+  long long ell;
+  double score;
 } zsetopval;
 
 typedef struct {
-    robj *subject;
-    int type; /* Set, sorted set */
-    int encoding;
-    double weight;
+  robj *subject;
+  int type; /* Set, sorted set */
+  int encoding;
+  double weight;
 
-    union {
-        /* Set iterators. */
-        union _iterset {
-            struct {
-                intset *is;
-                int ii;
-            } is;
-            struct {
-                dict *dict;
-                dictIterator *di;
-                dictEntry *de;
-            } ht;
-        } set;
+  union {
+    /* Set iterators. */
+    union _iterset {
+      struct {
+        intset *is;
+        int ii;
+      } is;
+      struct {
+        dict *dict;
+        dictIterator *di;
+        dictEntry *de;
+      } ht;
+    } set;
 
-        /* Sorted set iterators. */
-        union _iterzset {
-            struct {
-                unsigned char *zl;
-                unsigned char *eptr, *sptr;
-            } zl;
-            struct {
-                zset *zs;
-                zskiplistNode *node;
-            } sl;
-        } zset;
-    } iter;
+    /* Sorted set iterators. */
+    union _iterzset {
+      struct {
+        unsigned char *zl;
+        unsigned char *eptr, *sptr;
+      } zl;
+      struct {
+        zset *zs;
+        zskiplistNode *node;
+      } sl;
+    } zset;
+  } iter;
 } zsetopsrc;
 
 void zuiInitIterator(zsetopsrc *op);
@@ -52,73 +52,98 @@ robj *zuiObjectFromValue(zsetopval *val);
 int zuiFind(zsetopsrc *op, zsetopval *val, double *score);
 void zuiClearIterator(zsetopsrc *op);
 
-void vdiffstoreCommand(redisClient *c) {
-    int touched = 0;
-    int found = 0;
-    int added = 0;
-    double value;
-    long offset, count;
-    zsetopval zval;
-    zsetopsrc *src;
-    robj *tmp;
+int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags) {
+  int i, num, *keys;
+  REDIS_NOTUSED(cmd);
+  REDIS_NOTUSED(flags);
 
-    robj *dstkey = c->argv[1];
-    robj *dstobj = createZsetObject();
-    zset *dstzset = dstobj->ptr;
+  num = atoi(argv[3]->ptr) + 2;
+  /* Sanity check. Don't return any key if the command is going to
+   * reply with syntax error. */
+  if (num > (argc-4)) {
+    *numkeys = 0;
+    return NULL;
+  }
+  keys = zmalloc(sizeof(int)*num);
+  keys[0] = 1;
+  keys[1] = 2;
+  for (i = 2; i < num; i++) {
+    keys[i] = 2+i;
+  }
+  *numkeys = num;
+  return keys;
+}
 
-    src = zcalloc(sizeof(zsetopsrc) * 2);
-    src[0].subject = lookupKey(c->db,c->argv[2]);
-    if (src[0].subject == NULL) {
-        goto vikidiffstorageend;
-    } else {
-        src[0].encoding = src[0].subject->encoding;
+void vfindCommand(redisClient *c) {
+  int skip, field_length, found = 0, added = 0, desc = 1;
+  long offset, count, filter_count;
+  void *replylen = NULL;
+  char *k;
+  zsetopval zval;
+  zsetopsrc *zset;
+  robj *cap, *o, *tmp, **filters, *hash;
+  robj *summary_field = createStringObject("summary", 7);
+
+  if ((getLongFromObjectOrReply(c, c->argv[3], &filter_count, NULL) != REDIS_OK)) { goto end; }
+  zset = zcalloc(sizeof(zsetopsrc));
+  filters = zmalloc(sizeof(robj*) * filter_count);
+
+  if ((zset->subject = lookupKeyReadOrReply(c, c->argv[1], shared.emptymultibulk)) == NULL || checkType(c, zset->subject, REDIS_ZSET)) { goto end; }
+  zset->encoding = zset->subject->encoding;
+  zset->type = REDIS_ZSET;
+
+  if ((cap = lookupKeyReadOrReply(c, c->argv[2], shared.emptymultibulk)) == NULL || checkType(c, cap, REDIS_SET)) { goto end; }
+
+  for(int i = 0; i < filter_count; i++) {
+    if ((filters[i] = lookupKeyReadOrReply(c, c->argv[i+4], shared.emptymultibulk)) == NULL || checkType(c, cap, REDIS_SET)) { goto end; }
+  }
+
+  if (!strcasecmp(c->argv[4 + filter_count]->ptr, "asc")) { desc = 0; }
+  if((getLongFromObjectOrReply(c, c->argv[5 + filter_count], &offset, NULL) != REDIS_OK)) { return; }
+  if((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &count, NULL) != REDIS_OK)) { return; }
+
+  zuiInitIterator(zset);
+  memset(&zval, 0, sizeof(zval));
+
+  replylen = addDeferredMultiBulkLength(c);
+
+  while (zuiNext(zset, &zval)) {
+    tmp = zuiObjectFromValue(&zval);
+    skip = 0;
+    for(int i = 0; i < filter_count; ++i) {
+      if (!setTypeIsMember(filters[i], tmp)) {
+        skip = 1;
+        break;
+      }
     }
-    src[0].type = REDIS_ZSET;
-    zuiInitIterator(&src[0]);
+    if (skip == 1 || setTypeIsMember(cap, tmp)) { continue; }
 
-    src[1].subject = lookupKey(c->db,c->argv[3]);
-    if (src[1].subject != NULL) {
-        src[1].encoding = src[1].subject->encoding;
+    if (found++ >= offset && added < count) {
+      field_length = strlen(tmp->ptr);
+      hash = createStringObject(NULL, field_length + 2);
+      k = hash->ptr;
+      memcpy(k, "r:", 2);
+      memcpy(k + 2, tmp->ptr, field_length);
+      o = lookupKeyRead(c->db, hash);
+      if (o == NULL) {
+        //There is no summary data for the element
+        --found;
+      } else {
+        o = hashTypeGetObject(o, summary_field);
+        addReplyBulk(c, o);
+        decrRefCount(o);
+        ++added;
+      }
+      decrRefCount(hash);
     }
-    src[1].type = REDIS_SET;
-    zuiInitIterator(&src[1]);
+    if (found > 500 && added == count) { break; }
+  }
 
-    getLongFromObjectOrReply(c, c->argv[4], &offset, NULL);
-    getLongFromObjectOrReply(c, c->argv[5], &count, NULL);
-
-    memset(&zval, 0, sizeof(zval));
-
-    while (zuiNext(&src[0],&zval)) {
-        tmp = zuiObjectFromValue(&zval);
-        if (zuiFind(&src[1],&zval,&value) == 0) {
-            if (found++ >= offset && added < count) {
-                zslInsert(dstzset->zsl,zval.score,tmp);
-                incrRefCount(tmp); /* added to skiplist */
-                dictAdd(dstzset->dict,tmp,&zval.score);
-                incrRefCount(tmp); /* added to dictionary */
-                ++added;
-            }
-        }
-    }
-
-    zuiClearIterator(&src[0]);
-    zuiClearIterator(&src[1]);
-
-    if (dbDelete(c->db,dstkey)) {
-        signalModifiedKey(c->db,dstkey);
-        touched = 1;
-        server.dirty++;
-    }
-
-vikidiffstorageend:
-    if (dstzset->zsl->length) {
-        dbAdd(c->db,dstkey,dstobj);
-        addReplyLongLong(c,found);
-        if (!touched) signalModifiedKey(c->db,dstkey);
-        server.dirty++;
-    } else {
-        decrRefCount(dstobj);
-        addReply(c,shared.czero);
-    }
-    zfree(src);
+  addReplyLongLong(c, found);
+  zuiClearIterator(zset);
+end:
+  zfree(filters);
+  zfree(zset);
+  decrRefCount(summary_field);
+  setDeferredMultiBulkLength(c, replylen, added + 1);
 }
