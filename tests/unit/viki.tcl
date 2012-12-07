@@ -84,7 +84,7 @@ start_server {tags {"viki"}} {
       assert_equal {s_g s_f 7} [r vfind zset cap 0 desc 1 2]
     }
 
-    test "vdiff 11 - $encoding" {
+    test "vdiff 12 - $encoding" {
       setup_data
       r sadd cap b x
       assert_equal {s_a s_c 7} [r vfind zset cap 0 asc 1 2]
