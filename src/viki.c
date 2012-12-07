@@ -14,7 +14,6 @@ int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 zskiplistNode* zslGetElementByRank(zskiplist *zsl, unsigned long rank);
 
 void vfindByZWithFilters(redisClient *c, vfindData *data);
-void vfindWithoutFilters(redisClient *c, vfindData *data);
 void vfindByFilters(redisClient *c, vfindData *data);
 
 static void initializeZsetIterator(vfindData *data);
@@ -76,26 +75,21 @@ void vfindCommand(redisClient *c) {
   if (!strcasecmp(c->argv[4 + filter_count]->ptr, "asc")) { data->desc = 0; }
   data->cap = lookupKey(c->db, c->argv[2]);
 
-  if (filter_count == 0) {
-    initializeZsetIterator(data);
-    vfindWithoutFilters(c, data);
-    goto reply;
-  }
-
   data->filter_count = filter_count;
-  data->filters = zmalloc(sizeof(robj*) * filter_count);
-  for(int i = 0; i < filter_count; i++) {
-    if ((data->filters[i] = lookupKey(c->db, c->argv[i+4])) == NULL || checkType(c, data->filters[i], REDIS_SET)) { goto reply; }
-  }
-  qsort(data->filters,filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
+  if (filter_count != 0) {
+    data->filters = zmalloc(sizeof(robj*) * filter_count);
+    for(int i = 0; i < filter_count; i++) {
+      if ((data->filters[i] = lookupKey(c->db, c->argv[i+4])) == NULL || checkType(c, data->filters[i], REDIS_SET)) { goto reply; }
+    }
+    qsort(data->filters,filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
 
-  if (zsetLength(zobj) / setTypeSize(data->filters[0]) > 1) {
-    vfindByFilters(c, data);
+    if (zsetLength(zobj) / setTypeSize(data->filters[0]) > 1) {
+      vfindByFilters(c, data);
+      goto reply;
+    }
   }
-  else {
-    initializeZsetIterator(data);
-    vfindByZWithFilters(c, data);
-  }
+  initializeZsetIterator(data);
+  vfindByZWithFilters(c, data);
 
 reply:
   addReplyLongLong(c, data->found);
@@ -166,31 +160,6 @@ next:
   setTypeReleaseIterator(si);
   decrRefCount(dstobj);
 
-  data->found = found;
-  data->added = added;
-}
-void vfindWithoutFilters(redisClient *c, vfindData *data) {
-  int desc = data->desc;
-  long offset = data->offset;
-  long count = data->count;
-  int found = 0;
-  int added = 0;
-  robj *cap = data->cap;
-  robj *summary_field = data->summary_field;
-  zskiplistNode *ln = data->ln;
-  robj *item;
-
-  while(ln != NULL) {
-    item = ln->obj;
-    if (heldback(cap, item)) { goto next; }
-    if (found++ >= offset && added < count) {
-      if (replyWithSummary(c, item, summary_field)) { added++; }
-      else { --found; }
-    }
-    if (found > 500 && added == count) { break; }
-next:
-    ln = desc ? ln->backward : ln->level[0].forward;
-  }
   data->found = found;
   data->added = added;
 }
