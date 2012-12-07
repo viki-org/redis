@@ -54,7 +54,7 @@ start_server {tags {"viki"}} {
 
     test "vdiff 7 - $encoding" {
       setup_data
-      r sadd filter2 d g u
+      r sadd filter2 d g u y x o p
       r sadd cap d b
       assert_equal {s_g 1} [r vfind zset cap 2 filter1 filter2 desc 0 10]
     }
@@ -88,6 +88,20 @@ start_server {tags {"viki"}} {
       setup_data
       r sadd cap b x
       assert_equal {s_a s_c 7} [r vfind zset cap 0 asc 1 2]
+    }
+
+    test "vdiff 13 - $encoding" {
+      setup_data
+      r sadd filter2 d b g
+      r sadd cap d
+      assert_equal {s_g s_b 2} [r vfind zset cap 2 filter1 filter2 asc 0 10]
+    }
+
+    test "vdiff 14 - $encoding" {
+      setup_data
+      r sadd filter2 d b g
+      r sadd cap d
+      assert_equal {s_b s_g 2} [r vfind zset cap 2 filter1 filter2 desc 0 10]
     }
   }
   basics ziplist
