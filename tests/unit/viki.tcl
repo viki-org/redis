@@ -16,6 +16,21 @@ start_server {tags {"viki"}} {
   }
 
   proc basics {encoding} {
+    test "vdiff params 1 - $encoding" {
+      set err "ERR wrong number of arguments for 'vfind' command"
+      assert_error $err { r vfind }
+      assert_error $err { r vfind ds }
+      assert_error $err { r vfind a b}
+      assert_error $err { r vfind a b 0 desc a}
+    }
+
+    test "vdiff params 2 - $encoding" {
+      set err "ERR value is not an integer or out of range"
+      assert_error $err {r vfind a b a x 0 10}
+      assert_error $err {r vfind a b 0 desc a 0}
+      assert_error $err {r vfind a b 0 desc 0 a}
+    }
+
     test "vdiff 1 - $encoding" {
       setup_data
       r sadd cap a c f z y mnm

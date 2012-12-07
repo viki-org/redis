@@ -29,7 +29,7 @@ int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, 
   num = atoi(argv[3]->ptr) + 2;
   /* Sanity check. Don't return any key if the command is going to
    * reply with syntax error. */
-  if (num > (argc-4)) {
+  if (num > (argc-7)) {
     *numkeys = 0;
     return NULL;
   }
@@ -45,36 +45,47 @@ int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, 
 
 void vfindCommand(redisClient *c) {
   long filter_count;
-  void *replylen = addDeferredMultiBulkLength(c);
+  void *replylen;
+  long offset;
+  long count;
   robj *zobj;
-
-  vfindData *data = zmalloc(sizeof(*data));
-  data->summary_field = createStringObject("summary", 7);
-  data->filters = NULL;
-  data->added = 0;
-  data->found = 0;
+  vfindData *data;
 
   if ((getLongFromObjectOrReply(c, c->argv[3], &filter_count, NULL) != REDIS_OK)) { return; }
-  if ((getLongFromObjectOrReply(c, c->argv[5 + filter_count], &data->offset, NULL) != REDIS_OK)) { return; }
-  if ((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &data->count, NULL) != REDIS_OK)) { return; }
-  if ((zobj = lookupKey(c->db, c->argv[1])) == NULL || checkType(c, zobj , REDIS_ZSET)) { goto cleanup; }
+  if (filter_count > (c->argc-7)) {
+    addReply(c,shared.syntaxerr);
+    return;
+  }
+  if ((getLongFromObjectOrReply(c, c->argv[5 + filter_count], &offset, NULL) != REDIS_OK)) { return; }
+  if ((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &count, NULL) != REDIS_OK)) { return; }
+
+  data = zmalloc(sizeof(*data));
+  data->summary_field = createStringObject("summary", 7);
+  data->filters = NULL;
+  data->offset = offset;
+  data->count = count;
+  data->added = 0;
+  data->found = 0;
+  data->desc = 1;
+
+  replylen = addDeferredMultiBulkLength(c);
+  if ((zobj = lookupKey(c->db, c->argv[1])) == NULL || checkType(c, zobj , REDIS_ZSET)) { goto reply; }
   zsetConvert(zobj, REDIS_ENCODING_SKIPLIST);
   data->zset = zobj->ptr;
 
-  data->desc = 1;
   if (!strcasecmp(c->argv[4 + filter_count]->ptr, "asc")) { data->desc = 0; }
   data->cap = lookupKey(c->db, c->argv[2]);
 
   if (filter_count == 0) {
     initializeZsetIterator(data);
     vfindWithoutFilters(c, data);
-    goto cleanup;
+    goto reply;
   }
 
   data->filter_count = filter_count;
   data->filters = zmalloc(sizeof(robj*) * filter_count);
   for(int i = 0; i < filter_count; i++) {
-    if ((data->filters[i] = lookupKey(c->db, c->argv[i+4])) == NULL || checkType(c, data->filters[i], REDIS_SET)) { goto cleanup; }
+    if ((data->filters[i] = lookupKey(c->db, c->argv[i+4])) == NULL || checkType(c, data->filters[i], REDIS_SET)) { goto reply; }
   }
   qsort(data->filters,filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
 
@@ -86,9 +97,10 @@ void vfindCommand(redisClient *c) {
     vfindByZWithFilters(c, data);
   }
 
-cleanup:
+reply:
   addReplyLongLong(c, data->found);
   setDeferredMultiBulkLength(c, replylen, (data->added)+1);
+cleanup:
   if (data->filters != NULL) { zfree(data->filters); }
   decrRefCount(data->summary_field);
   zfree(data);
