@@ -82,8 +82,10 @@ void vfindCommand(redisClient *c) {
       if ((data->filters[i] = lookupKey(c->db, c->argv[i+4])) == NULL || checkType(c, data->filters[i], REDIS_SET)) { goto reply; }
     }
     qsort(data->filters,filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
+    int size = setTypeSize(data->filters[0]);
+    int ratio = zsetLength(zobj) / size;
 
-    if (zsetLength(zobj) / setTypeSize(data->filters[0]) > 1) {
+    if ((size < 100 && ratio > 1) || (size < 500 && ratio > 2) || (size < 2000 && ratio > 3)) {
       vfindByFilters(c, data);
       goto reply;
     }
