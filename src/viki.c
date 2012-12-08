@@ -1,11 +1,12 @@
 #include "redis.h"
 #include <math.h>
 
-
 typedef struct vfindData {
   int desc, found, added;
   long filter_count, offset, count;
-  robj **filters, *cap, *anti_cap, *summary_field;
+  robj *summary_field;
+  robj **filter_objects;
+  dict *cap, *anti_cap, **filters;
   zskiplistNode *ln;
   zset *zset;
 } vfindData;
@@ -18,7 +19,8 @@ void vfindByFilters(redisClient *c, vfindData *data);
 
 static void initializeZsetIterator(vfindData *data);
 static int replyWithSummary(redisClient *c, robj *item, robj *summary_field);
-static int heldback(robj *cap, robj *anti_cap, robj *item);
+static int heldback(dict *cap, dict *anti_cap, robj *item);
+static int isMember(dict *subject, robj *item);
 
 int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags) {
   int i, num, *keys;
@@ -48,7 +50,7 @@ void vfindCommand(redisClient *c) {
   void *replylen;
   long offset;
   long count;
-  robj *zobj;
+  robj *zobj, *cap, *anti_cap;
   vfindData *data;
 
   if ((getLongFromObjectOrReply(c, c->argv[4], &filter_count, NULL) != REDIS_OK)) { return; }
@@ -62,6 +64,7 @@ void vfindCommand(redisClient *c) {
   data = zmalloc(sizeof(*data));
   data->summary_field = createStringObject("summary", 7);
   data->filters = NULL;
+  data->filter_objects = NULL;
   data->offset = offset;
   data->count = count;
   data->added = 0;
@@ -74,17 +77,23 @@ void vfindCommand(redisClient *c) {
   data->zset = zobj->ptr;
 
   if (!strcasecmp(c->argv[5 + filter_count]->ptr, "asc")) { data->desc = 0; }
-  data->cap = lookupKey(c->db, c->argv[2]);
-  data->anti_cap = lookupKey(c->db, c->argv[3]);
+  cap = lookupKey(c->db, c->argv[2]);
+  data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
+  anti_cap = lookupKey(c->db, c->argv[3]);
+  data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
 
   data->filter_count = filter_count;
   if (filter_count != 0) {
-    data->filters = zmalloc(sizeof(robj*) * filter_count);
-    for(int i = 0; i < filter_count; i++) {
-      if ((data->filters[i] = lookupKey(c->db, c->argv[i+5])) == NULL || checkType(c, data->filters[i], REDIS_SET)) { goto reply; }
+    data->filter_objects = zmalloc(sizeof(robj*) * filter_count);
+    data->filters = zmalloc(sizeof(dict*) * filter_count);
+    for(int i = 0; i < filter_count; ++i) {
+      if ((data->filter_objects[i] = lookupKey(c->db, c->argv[i+5])) == NULL || checkType(c, data->filter_objects[i], REDIS_SET)) { goto reply; }
     }
-    qsort(data->filters,filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
-    int size = setTypeSize(data->filters[0]);
+    qsort(data->filter_objects, filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
+    for (int i = 0; i < filter_count; ++i) {
+      data->filters[i] = (dict*)data->filter_objects[i]->ptr;
+    }
+    int size = dictSize(data->filters[0]);
     int ratio = zsetLength(zobj) / size;
 
     if ((size < 100 && ratio > 1) || (size < 500 && ratio > 2) || (size < 2000 && ratio > 3)) {
@@ -98,15 +107,14 @@ void vfindCommand(redisClient *c) {
 reply:
   addReplyLongLong(c, data->found);
   setDeferredMultiBulkLength(c, replylen, (data->added)+1);
-cleanup:
   if (data->filters != NULL) { zfree(data->filters); }
+  if (data->filter_objects != NULL) { zfree(data->filter_objects); }
   decrRefCount(data->summary_field);
   zfree(data);
 }
 
 void vfindByFilters(redisClient *c, vfindData *data) {
   zset *dstzset;
-  setTypeIterator *si;
   robj *item;
   zskiplist *zsl;
   zskiplistNode *ln;
@@ -118,9 +126,9 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   int found = 0;
   int added = 0;
   zset *zset = data->zset;
-  robj **filters = data->filters;
-  robj *cap = data->cap;
-  robj *anti_cap = data->anti_cap;
+  dict **filters = data->filters;
+  dict *cap = data->cap;
+  dict *anti_cap = data->anti_cap;
   robj *summary_field = data->summary_field;
   int64_t intobj;
   double score;
@@ -129,10 +137,14 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   dstzset = dstobj->ptr;
   zsl = dstzset->zsl;
 
-  si = setTypeInitIterator(filters[0]);
+  setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
+  si->subject = data->filter_objects[0];
+  si->encoding = si->subject->encoding;
+  si->di = dictGetIterator(filters[0]);
+
   while((setTypeNext(si, &item, &intobj)) != -1) {
     for(int i = 1; i < filter_count; ++i) {
-      if (!setTypeIsMember(filters[i], item)) { goto next; }
+      if (!isMember(filters[i], item)) { goto next; }
     }
     if (heldback(cap, anti_cap, item)) { goto next; }
     dictEntry *de;
@@ -148,6 +160,9 @@ next:
     item = NULL;
   }
 
+  dictReleaseIterator(si->di);
+  zfree(si);
+
   if (found > offset) {
     if (offset == 0) {
       ln = desc ? zsl->tail : zsl->header->level[0].forward;
@@ -162,9 +177,7 @@ next:
     }
   }
 
-  setTypeReleaseIterator(si);
   decrRefCount(dstobj);
-
   data->found = found;
   data->added = added;
 }
@@ -176,9 +189,9 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   long filter_count = data->filter_count;
   long offset = data->offset;
   long count = data->count;
-  robj **filters = data->filters;
-  robj *cap = data->cap;
-  robj *anti_cap = data->anti_cap;
+  dict **filters = data->filters;
+  dict *cap = data->cap;
+  dict *anti_cap = data->anti_cap;
   robj *summary_field = data->summary_field;
   zskiplistNode *ln = data->ln;
   robj *item;
@@ -187,7 +200,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   while(ln != NULL) {
     item = ln->obj;
     for(int i = 0; i < filter_count; ++i) {
-      if (!setTypeIsMember(filters[i], item)) { goto next; }
+      if (!isMember(filters[i], item)) { goto next; }
     }
     if (heldback(cap, anti_cap, item)) { goto next; }
     if (found++ >= offset && added < count) {
@@ -229,7 +242,11 @@ static int replyWithSummary(redisClient *c, robj *item, robj *summary_field) {
   decrRefCount(hash);
   return r;
 }
-inline static int heldback(robj *cap, robj *anti_cap, robj *item) {
-  if (cap == NULL || !setTypeIsMember(cap, item)) { return 0; }
-  return (anti_cap == NULL || !setTypeIsMember(anti_cap, item));
+inline static int heldback(dict *cap, dict *anti_cap, robj *item) {
+  if (cap == NULL || !isMember(cap, item)) { return 0; }
+  return (anti_cap == NULL || !isMember(anti_cap, item));
+}
+
+inline static int isMember(dict *subject, robj *item) {
+  return dictFind(subject, item) != NULL;
 }
