@@ -18,11 +18,11 @@ start_server {tags {"viki"}} {
   proc basics {encoding} {
     test "vdiff params 1 - $encoding" {
       set err "ERR wrong number of arguments for 'vfind' command"
-      assert_error $err { r vfind }
-      assert_error $err { r vfind ds }
-      assert_error $err { r vfind a b}
-      assert_error $err { r vfind a b 0 desc a}
-      assert_error $err { r vfind a b 0 desc a b}
+      assert_error $err {r vfind }
+      assert_error $err {r vfind ds }
+      assert_error $err {r vfind a b}
+      assert_error $err {r vfind a b 0 desc a}
+      assert_error $err {r vfind a b 0 desc a b}
     }
 
     test "vdiff params 2 - $encoding" {
@@ -32,10 +32,17 @@ start_server {tags {"viki"}} {
       assert_error $err {r vfind a b x 0 desc 0 a}
     }
 
+    test "vdiff invalid cap - $encoding" {
+      setup_data
+      set err "ERR Operation against a key holding the wrong kind of value"
+      r set fail over9000
+      assert_error $err {r vfind zset fail 0 0 desc 0 10}
+    }
+
     test "vdiff 1 - $encoding" {
       setup_data
       r sadd cap a c f z y mnm
-      assert_equal {s_d s_b s_g 3} [r vfind zset cap anti 1 filter1 desc 0 10]
+      assert_equal {s_d s_b s_g 3} [r vfind zset cap 0 1 filter1 desc 0 10]
     }
 
     test "vdiff 2 - $encoding" {

@@ -72,15 +72,18 @@ void vfindCommand(redisClient *c) {
   data->desc = 1;
 
   replylen = addDeferredMultiBulkLength(c);
-  if ((zobj = lookupKey(c->db, c->argv[1])) == NULL || checkType(c, zobj , REDIS_ZSET)) { goto reply; }
+  if ((zobj = lookupKey(c->db, c->argv[1])) == NULL || checkType(c, zobj, REDIS_ZSET)) { (data->added)++; goto reply; }
+  if ((cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, cap, REDIS_SET)) { (data->added)++; goto reply; }
+  if ((anti_cap = lookupKey(c->db, c->argv[3])) != NULL && checkType(c, anti_cap, REDIS_SET)) { (data->added)++; goto reply; }
+  //cap = lookupKey(c->db, c->argv[2]);
+  //anti_cap = lookupKey(c->db, c->argv[3]);
+
   zsetConvert(zobj, REDIS_ENCODING_SKIPLIST);
   data->zset = zobj->ptr;
+  data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
+  data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
 
   if (!strcasecmp(c->argv[5 + filter_count]->ptr, "asc")) { data->desc = 0; }
-  cap = lookupKey(c->db, c->argv[2]);
-  data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
-  anti_cap = lookupKey(c->db, c->argv[3]);
-  data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
 
   data->filter_count = filter_count;
   if (filter_count != 0) {
