@@ -32,6 +32,11 @@ start_server {tags {"viki"}} {
       assert_error $err {r vfind a b x 0 desc 0 a}
     }
 
+    test "vdiff empty zset - $encoding" {
+      r sadd cap a c f z y mnm
+      assert_equal {0} [r vfind x cap 0 0 desc 0 10]
+    }
+
     test "vdiff invalid cap - $encoding" {
       setup_data
       set err "ERR Operation against a key holding the wrong kind of value"

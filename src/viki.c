@@ -72,11 +72,9 @@ void vfindCommand(redisClient *c) {
   data->desc = 1;
 
   replylen = addDeferredMultiBulkLength(c);
-  if ((zobj = lookupKey(c->db, c->argv[1])) == NULL || checkType(c, zobj, REDIS_ZSET)) { (data->added)++; goto reply; }
+  if ((zobj = lookupKey(c->db, c->argv[1])) == NULL || zobj->type != REDIS_ZSET) { goto reply; }
   if ((cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, cap, REDIS_SET)) { (data->added)++; goto reply; }
   if ((anti_cap = lookupKey(c->db, c->argv[3])) != NULL && checkType(c, anti_cap, REDIS_SET)) { (data->added)++; goto reply; }
-  //cap = lookupKey(c->db, c->argv[2]);
-  //anti_cap = lookupKey(c->db, c->argv[3]);
 
   zsetConvert(zobj, REDIS_ENCODING_SKIPLIST);
   data->zset = zobj->ptr;
@@ -210,7 +208,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
       if (replyWithSummary(c, item, summary_field)) { added++; }
       else { --found; }
     }
-    if (found > 500 && added == count) { break; }
+    if (found > 1000 && added == count) { break; }
 next:
     ln = desc ? ln->backward : ln->level[0].forward;
   }
