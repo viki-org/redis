@@ -3,7 +3,7 @@
 
 typedef struct vfindData {
   int desc, found, added;
-  long filter_count, offset, count;
+  long filter_count, offset, count, up_to;
   robj *summary_field;
   robj **filter_objects;
   dict *cap, *anti_cap, **filters;
@@ -48,8 +48,7 @@ int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, 
 void vfindCommand(redisClient *c) {
   long filter_count;
   void *replylen;
-  long offset;
-  long count;
+  long offset, count, up_to;
   robj *zobj, *cap, *anti_cap;
   vfindData *data;
 
@@ -60,6 +59,7 @@ void vfindCommand(redisClient *c) {
   }
   if ((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &offset, NULL) != REDIS_OK)) { return; }
   if ((getLongFromObjectOrReply(c, c->argv[7 + filter_count], &count, NULL) != REDIS_OK)) { return; }
+  if ((getLongFromObjectOrReply(c, c->argv[8 + filter_count], &up_to, NULL) != REDIS_OK)) { return; }
 
   data = zmalloc(sizeof(*data));
   data->summary_field = createStringObject("summary", 7);
@@ -67,6 +67,7 @@ void vfindCommand(redisClient *c) {
   data->filter_objects = NULL;
   data->offset = offset;
   data->count = count;
+  data->up_to = up_to;
   data->added = 0;
   data->found = 0;
   data->desc = 1;
@@ -190,6 +191,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   long filter_count = data->filter_count;
   long offset = data->offset;
   long count = data->count;
+  long up_to = data->up_to;
   dict **filters = data->filters;
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
@@ -208,7 +210,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
       if (replyWithSummary(c, item, summary_field)) { added++; }
       else { --found; }
     }
-    if (found > 1000 && added == count) { break; }
+    if (added == count && found >= up_to) { break; }
 next:
     ln = desc ? ln->backward : ln->level[0].forward;
   }
