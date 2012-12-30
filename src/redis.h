@@ -1185,6 +1185,7 @@ void replconfCommand(redisClient *c);
 
 int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags);
 void vfindCommand(redisClient *c);
+void vsortCommand(redisClient *c);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__ ((deprecated));

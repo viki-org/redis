@@ -1,4 +1,4 @@
-start_server {tags {"viki"}} {
+start_server {tags {"vfind"}} {
   proc setup_data {} {
     r del zset filter1 filter2 cap r:a r:b r:c r:d r:e r:f r:g r:mnm anti
     r hset r:a details s_a
