@@ -1,4 +1,5 @@
 #include "redis.h"
+#include "viki.h"
 #include <math.h>
 
 typedef struct vfindData {
@@ -11,6 +12,8 @@ typedef struct vfindData {
   zset *zset;
 } vfindData;
 
+extern inline int heldback(dict *cap, dict *anti_cap, robj *item);
+
 int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 zskiplistNode* zslGetElementByRank(zskiplist *zsl, unsigned long rank);
 
@@ -18,9 +21,6 @@ void vfindByZWithFilters(redisClient *c, vfindData *data);
 void vfindByFilters(redisClient *c, vfindData *data);
 
 static void initializeZsetIterator(vfindData *data);
-static int replyWithDetail(redisClient *c, robj *item, robj *detail_field);
-static int heldback(dict *cap, dict *anti_cap, robj *item);
-static int isMember(dict *subject, robj *item);
 
 int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags) {
   int i, num, *keys;
@@ -222,34 +222,4 @@ static void initializeZsetIterator(vfindData *data) {
   zskiplist *zsl;
   zsl = data->zset->zsl;
   data->ln = data->desc ? zsl->tail : zsl->header->level[0].forward;
-}
-
-static int replyWithDetail(redisClient *c, robj *item, robj *detail_field) {
-  robj *o, *hash;
-  char *k;
-  int r = 1, field_length;
-
-  field_length = strlen(item->ptr);
-  hash = createStringObject(NULL, field_length + 2);
-  k = hash->ptr;
-  memcpy(k, "r:", 2);
-  memcpy(k + 2, item->ptr, field_length);
-  o = lookupKey(c->db, hash);
-  if (o != NULL) {
-    o = hashTypeGetObject(o, detail_field);
-    addReplyBulk(c, o);
-    decrRefCount(o);
-  } else {
-    r = 0;
-  }
-  decrRefCount(hash);
-  return r;
-}
-inline static int heldback(dict *cap, dict *anti_cap, robj *item) {
-  if (cap == NULL || !isMember(cap, item)) { return 0; }
-  return (anti_cap == NULL || !isMember(anti_cap, item));
-}
-
-inline static int isMember(dict *subject, robj *item) {
-  return dictFind(subject, item) != NULL;
 }
