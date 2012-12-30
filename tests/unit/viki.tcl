@@ -1,14 +1,14 @@
 start_server {tags {"viki"}} {
   proc setup_data {} {
     r del zset filter1 filter2 cap r:a r:b r:c r:d r:e r:f r:g r:mnm anti
-    r hset r:a summary s_a
-    r hset r:b summary s_b
-    r hset r:c summary s_c
-    r hset r:d summary s_d
-    r hset r:e summary s_e
-    r hset r:f summary s_f
-    r hset r:g summary s_g
-    r hset r:mnm summary good_stuff
+    r hset r:a details s_a
+    r hset r:b details s_b
+    r hset r:c details s_c
+    r hset r:d details s_d
+    r hset r:e details s_e
+    r hset r:f details s_f
+    r hset r:g details s_g
+    r hset r:mnm details good_stuff
 
     r zadd zset 1 a 10 b 3 c 15 d 5 e 6 f 7 g 0 mnm
     r sadd filter1 b c d f g h i o u mnm

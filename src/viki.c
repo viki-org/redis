@@ -4,7 +4,7 @@
 typedef struct vfindData {
   int desc, found, added;
   long filter_count, offset, count, up_to;
-  robj *summary_field;
+  robj *detail_field;
   robj **filter_objects;
   dict *cap, *anti_cap, **filters;
   zskiplistNode *ln;
@@ -18,7 +18,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data);
 void vfindByFilters(redisClient *c, vfindData *data);
 
 static void initializeZsetIterator(vfindData *data);
-static int replyWithSummary(redisClient *c, robj *item, robj *summary_field);
+static int replyWithDetail(redisClient *c, robj *item, robj *detail_field);
 static int heldback(dict *cap, dict *anti_cap, robj *item);
 static int isMember(dict *subject, robj *item);
 
@@ -62,7 +62,7 @@ void vfindCommand(redisClient *c) {
   if ((getLongFromObjectOrReply(c, c->argv[8 + filter_count], &up_to, NULL) != REDIS_OK)) { return; }
 
   data = zmalloc(sizeof(*data));
-  data->summary_field = createStringObject("summary", 7);
+  data->detail_field = createStringObject("details", 7);
   data->filters = NULL;
   data->filter_objects = NULL;
   data->offset = offset;
@@ -111,7 +111,7 @@ reply:
   setDeferredMultiBulkLength(c, replylen, (data->added)+1);
   if (data->filters != NULL) { zfree(data->filters); }
   if (data->filter_objects != NULL) { zfree(data->filter_objects); }
-  decrRefCount(data->summary_field);
+  decrRefCount(data->detail_field);
   zfree(data);
 }
 
@@ -131,7 +131,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   dict **filters = data->filters;
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
-  robj *summary_field = data->summary_field;
+  robj *detail_field = data->detail_field;
   int64_t intobj;
   double score;
 
@@ -173,7 +173,7 @@ next:
     }
 
     while (added < found && added < count && ln != NULL) {
-      if (replyWithSummary(c, ln->obj, summary_field)) { added++; }
+      if (replyWithDetail(c, ln->obj, detail_field)) { added++; }
       else { --found; }
       ln = desc ? ln->backward : ln->level[0].forward;
     }
@@ -195,7 +195,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   dict **filters = data->filters;
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
-  robj *summary_field = data->summary_field;
+  robj *detail_field = data->detail_field;
   zskiplistNode *ln = data->ln;
   robj *item;
 
@@ -207,7 +207,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
     }
     if (heldback(cap, anti_cap, item)) { goto next; }
     if (found++ >= offset && added < count) {
-      if (replyWithSummary(c, item, summary_field)) { added++; }
+      if (replyWithDetail(c, item, detail_field)) { added++; }
       else { --found; }
     }
     if (added == count && found >= up_to) { break; }
@@ -224,7 +224,7 @@ static void initializeZsetIterator(vfindData *data) {
   data->ln = data->desc ? zsl->tail : zsl->header->level[0].forward;
 }
 
-static int replyWithSummary(redisClient *c, robj *item, robj *summary_field) {
+static int replyWithDetail(redisClient *c, robj *item, robj *detail_field) {
   robj *o, *hash;
   char *k;
   int r = 1, field_length;
@@ -236,7 +236,7 @@ static int replyWithSummary(redisClient *c, robj *item, robj *summary_field) {
   memcpy(k + 2, item->ptr, field_length);
   o = lookupKey(c->db, hash);
   if (o != NULL) {
-    o = hashTypeGetObject(o, summary_field);
+    o = hashTypeGetObject(o, detail_field);
     addReplyBulk(c, o);
     decrRefCount(o);
   } else {
