@@ -61,7 +61,7 @@ void vsort(redisClient *c, vsortData *data) {
       items[lowest_at] = item;
       lowest = score;
       for(int j = 0; j < count; ++j) {
-        if (scores[i] < lowest) {
+        if (scores[j] < lowest) {
           lowest = scores[j];
           lowest_at = j;
         }
