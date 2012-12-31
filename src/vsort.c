@@ -4,7 +4,7 @@
 typedef struct vsortData {
   int added;
   long count;
-  robj *detail_field, *country;
+  robj *meta_field, *country;
   dict *cap, *anti_cap;
 } vsortData;
 
@@ -23,7 +23,7 @@ void vsortCommand(redisClient *c) {
   if ((anti_cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
 
   data = zmalloc(sizeof(*data));
-  data->detail_field = createStringObject("details", 7);
+  data->meta_field = createStringObject("meta", 4);
   data->added = 0;
   data->count = count;
   data->country = c->argv[4];
@@ -33,7 +33,7 @@ void vsortCommand(redisClient *c) {
   replylen = addDeferredMultiBulkLength(c);
   vsort(c, data);
   setDeferredMultiBulkLength(c, replylen, data->added);
-  decrRefCount(data->detail_field);
+  decrRefCount(data->meta_field);
   zfree(data);
 }
 
@@ -41,12 +41,39 @@ void vsort(redisClient *c, vsortData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
   robj *country = data->country;
+  long count = data->count;
+  int found = 0, lowest = -1, lowest_at = 0;
+  int scores[count];
+  robj **items = zmalloc(sizeof(robj*) * count);
 
   for(int i = 5; i < c->argc; ++i) {
     robj *item = c->argv[i];
     if (heldback(cap, anti_cap, item)) { continue; }
     long score = getViews(c, item, country);
+    if (found < count) {
+      items[found] = item;
+      if (lowest == -1 || score < lowest) {
+        lowest = score;
+        lowest_at = found;
+      }
+      scores[found++] = score;
+    } else if (score > lowest) {
+      items[lowest_at] = item;
+      lowest = score;
+      for(int j = 0; j < count; ++j) {
+        if (scores[i] < lowest) {
+          lowest = scores[j];
+          lowest_at = j;
+        }
+      }
+    }
   }
+  for(int i = 0; i < found; ++i) {
+    if (replyWithDetail(c, items[i], data->meta_field)) {
+      ++(data->added);
+    }
+  }
+  zfree(items);
 }
 
 long getViews(redisClient *c, robj *item, robj *country) {

@@ -1,6 +1,19 @@
 start_server {tags {"vsort"}} {
   proc setup_data {} {
     r del cap anti
+    r hset r:100c:views:recent gp 10
+    r hset r:200c:views:recent gp 30
+    r hset r:300v:views:recent gp 20
+    r hset r:400c:views:recent gp 5
+    r hset r:500v:views:recent gp 9
+    r hset r:600v:views:recent gp 100
+
+    r hset r:100c meta r100
+    r hset r:200c meta r200
+    r hset r:300v meta r300
+    r hset r:400c meta r400
+    r hset r:500v meta r500
+    r hset r:600v meta r600
   }
 
   test "wrong number of parameters" {
@@ -34,10 +47,26 @@ start_server {tags {"vsort"}} {
     assert_error $err {r vsort cap anti 5 gp 100v}
   }
 
-  # test "nothing" {
-  #   setup_data
-  #   r hset r:100v:views:recent gp 23
-  #   r hset r:200v:views:recent gp 43
-  #   assert_equal {0} [r vsort cap anti 5 gp 100v 200v]
-  # }
+  test "returns less results than requested if we don't have enough matches" {
+    setup_data
+    assert_equal {r100 r200} [r vsort cap anti 5 gp 100c 200c]
+  }
+
+  test "returns the results sorted by views" {
+    setup_data
+    assert_equal {r600 r200 r300} [r vsort cap anti 3 gp 100c 200c 300v 400c 500v 600v]
+  }
+
+  test "applies holdbacks" {
+    setup_data
+    r sadd cap 200c 300v
+    assert_equal {r100 r600 r500} [r vsort cap anti 3 gp 100c 200c 300v 400c 500v 600v]
+  }
+
+  test "applies anti_cap" {
+    setup_data
+    r sadd cap 200c 300v
+    r sadd anti 300v
+    assert_equal {r100 r300 r600} [r vsort cap anti 3 gp 100c 200c 300v 400c 500v 600v]
+  }
 }
