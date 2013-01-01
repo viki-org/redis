@@ -8,7 +8,8 @@ typedef struct vsortData {
   dict *cap, *anti_cap;
 } vsortData;
 
-void vsort(redisClient *c, vsortData *data);
+void vsortByViews(redisClient *c, vsortData *data);
+void vsortByNone(redisClient *c, vsortData *data);
 long getViews(redisClient *c, robj *item, robj *country);
 
 void vsortCommand(redisClient *c) {
@@ -31,13 +32,17 @@ void vsortCommand(redisClient *c) {
   data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
 
   replylen = addDeferredMultiBulkLength(c);
-  vsort(c, data);
+  if (count < c->argc - 5) {
+    vsortByViews(c, data);
+  } else {
+    vsortByNone(c, data);
+  }
   setDeferredMultiBulkLength(c, replylen, data->added);
   decrRefCount(data->meta_field);
   zfree(data);
 }
 
-void vsort(redisClient *c, vsortData *data) {
+void vsortByViews(redisClient *c, vsortData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
   robj *country = data->country;
@@ -74,6 +79,19 @@ void vsort(redisClient *c, vsortData *data) {
     }
   }
   zfree(items);
+}
+
+void vsortByNone(redisClient *c, vsortData *data) {
+  dict *cap = data->cap;
+  dict *anti_cap = data->anti_cap;
+
+  for(int i = 5; i < c->argc; ++i) {
+    robj *item = c->argv[i];
+    if (heldback(cap, anti_cap, item)) { continue; }
+    if (replyWithDetail(c, item, data->meta_field)) {
+      ++(data->added);
+    }
+  }
 }
 
 long getViews(redisClient *c, robj *item, robj *country) {

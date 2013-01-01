@@ -52,7 +52,12 @@ start_server {tags {"vsort"}} {
     assert_equal {r100 r200} [r vsort cap anti 5 gp 100c 200c]
   }
 
-  test "returns the results sorted by views" {
+  test "returns results when the count matches the exact number requested" {
+    setup_data
+    assert_equal {r100 r200 r300} [r vsort cap anti 3 gp 100c 200c 300v]
+  }
+
+  test "returns the results limited by most viewed" {
     setup_data
     assert_equal {r600 r200 r300} [r vsort cap anti 3 gp 100c 200c 300v 400c 500v 600v]
   }
