@@ -1,3 +1,4 @@
+unsigned char *zzlFind(unsigned char *zl, robj *ele, double *score);
 int replyWithDetail(redisClient *c, robj *item, robj *detail_field);
 robj *getResourceValue(redisClient *c, robj *item, robj *field);
 robj *getHashValue(redisClient *c, robj *item, robj *field);

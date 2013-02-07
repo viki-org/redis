@@ -1,38 +1,41 @@
 #include "redis.h"
 #include "viki.h"
+#define VSORT_ID_START 6
 
 typedef struct vsortData {
   int added;
   long count;
-  robj *meta_field, *country;
+  robj *meta_field, *videoScores, *containerScores;
   dict *cap, *anti_cap;
 } vsortData;
 
 void vsortByViews(redisClient *c, vsortData *data);
 void vsortByNone(redisClient *c, vsortData *data);
-long getViews(redisClient *c, robj *item, robj *country);
+long getScore(robj *item, robj *zscores);
 
 void vsortCommand(redisClient *c) {
   long count;
   void *replylen;
-  robj *cap, *anti_cap;
+  robj *cap, *anti_cap, *videoScores, *containerScores;
   vsortData *data;
 
   if ((getLongFromObjectOrReply(c, c->argv[3], &count, NULL) != REDIS_OK)) { return; }
-  if (strlen(c->argv[4]->ptr) != 2) { addReplyError(c, "value is out of range"); return; }
   if ((cap = lookupKey(c->db, c->argv[1])) != NULL && checkType(c, cap, REDIS_SET)) { return; }
   if ((anti_cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
+  if ((videoScores = lookupKey(c->db, c->argv[4])) != NULL && checkType(c, videoScores, REDIS_ZSET)) { return; }
+  if ((containerScores = lookupKey(c->db, c->argv[5])) != NULL && checkType(c, containerScores, REDIS_ZSET)) { return; }
 
   data = zmalloc(sizeof(*data));
   data->meta_field = createStringObject("meta", 4);
   data->added = 0;
   data->count = count;
-  data->country = c->argv[4];
+  data->videoScores = videoScores;
+  data->containerScores = containerScores;
   data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
   data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
 
   replylen = addDeferredMultiBulkLength(c);
-  if (count < c->argc - 5) {
+  if (count < c->argc - VSORT_ID_START) {
     vsortByViews(c, data);
   } else {
     vsortByNone(c, data);
@@ -45,16 +48,19 @@ void vsortCommand(redisClient *c) {
 void vsortByViews(redisClient *c, vsortData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
-  robj *country = data->country;
+  robj *containerScores = data->containerScores;
+  robj *videoScores = data->videoScores;
   long count = data->count;
   int found = 0, lowest = -1, lowest_at = 0;
   int scores[count];
   robj **items = zmalloc(sizeof(robj*) * count);
 
-  for(int i = 5; i < c->argc; ++i) {
+  for(int i = VSORT_ID_START; i < c->argc; ++i) {
     robj *item = c->argv[i];
     if (heldback(cap, anti_cap, item)) { continue; }
-    long score = getViews(c, item, country);
+    sds str = item->ptr;
+    robj *zscores = str[sdslen(str) - 1] == 'c' ? containerScores : videoScores;
+    long score = getScore(item, zscores);
     if (found < count) {
       items[found] = item;
       if (lowest == -1 || score < lowest) {
@@ -85,7 +91,7 @@ void vsortByNone(redisClient *c, vsortData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
 
-  for(int i = 5; i < c->argc; ++i) {
+  for(int i = VSORT_ID_START; i < c->argc; ++i) {
     robj *item = c->argv[i];
     if (heldback(cap, anti_cap, item)) { continue; }
     if (replyWithDetail(c, item, data->meta_field)) {
@@ -94,19 +100,14 @@ void vsortByNone(redisClient *c, vsortData *data) {
   }
 }
 
-long getViews(redisClient *c, robj *item, robj *country) {
-  int key_length = strlen(item->ptr);
-  robj *key = createStringObject(NULL, key_length + 15);
-  char *k = key->ptr;
-  memcpy(k, "r:", 2);
-  memcpy(k + 2, item->ptr, key_length);
-  memcpy(k + 2 + key_length, ":views:recent", 13);
-  robj *value = getHashValue(c, key, country);
-  decrRefCount(key);
-  if (value == NULL) {
-    return -1;
+long getScore(robj *item, robj *zscores) {
+  double score;
+
+  if (zscores->encoding == REDIS_ENCODING_ZIPLIST) {
+    return zzlFind(zscores->ptr, item, &score) == NULL ? 0 : (long)score;
   }
-  long score = (long)value->ptr;
-  decrRefCount(value);
-  return score;
+  zset *zs = zscores->ptr;
+  dictEntry *de;
+  de = dictFind(zs->dict, item);
+  return de == NULL ? 0 : *(long*)dictGetVal(de);
 }

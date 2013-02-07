@@ -1,13 +1,8 @@
 start_server {tags {"vsort"}} {
   proc setup_data {} {
     r del cap anti
-    r hset r:100c:views:recent gp 10
-    r hset r:200c:views:recent gp 30
-    r hset r:300v:views:recent gp 20
-    r hset r:400c:views:recent gp 5
-    r hset r:500v:views:recent gp 9
-    r hset r:600v:views:recent gp 100
-
+    r zadd l:-2l:videos:us 20 300v 9 500v 100 600v
+    r zadd l:-2l:containers:us 10 100c 30 200c 5 400c
     r hset r:100c meta r100
     r hset r:200c meta r200
     r hset r:300v meta r300
@@ -22,56 +17,51 @@ start_server {tags {"vsort"}} {
     assert_error $err {r vsort cap }
     assert_error $err {r vsort cap anti}
     assert_error $err {r vsort cap anti 5}
-    assert_error $err {r vsort cap anti 5 us}
+    assert_error $err {r vsort cap anti 5 6}
   }
 
   test "wrong type for count" {
     set err "ERR value is not an integer or out of range"
-    assert_error $err {r vsort cap anti abc us 100v}
-  }
-
-  test "wrong type for country" {
-    set err "ERR value is out of range"
-    assert_error $err {r vsort cap anti 5 abc 100v}
+    assert_error $err {r vsort cap anti abc l:-2l:videos:us l:-2l:containers:us 100v}
   }
 
   test "cap is not a set" {
     r set cap over9000
     set err "ERR Operation against a key holding the wrong kind of value"
-    assert_error $err {r vsort cap anti 5 gp 100v}
+    assert_error $err {r vsort cap anti 5 l:-2l:videos:us l:-2l:containers:us 100v}
   }
 
   test "anti is not a set" {
     r set anti under
     set err "ERR Operation against a key holding the wrong kind of value"
-    assert_error $err {r vsort cap anti 5 gp 100v}
+    assert_error $err {r vsort cap anti 5 l:-2l:videos:us l:-2l:containers:us 100v}
   }
 
   test "returns less results than requested if we don't have enough matches" {
     setup_data
-    assert_equal {r100 r200} [r vsort cap anti 5 gp 100c 200c]
+    assert_equal {r100 r200} [r vsort cap anti 5 l:-2l:videos:us l:-2l:containers:us 100c 200c]
   }
 
   test "returns results when the count matches the exact number requested" {
     setup_data
-    assert_equal {r100 r200 r300} [r vsort cap anti 3 gp 100c 200c 300v]
+    assert_equal {r100 r200 r300} [r vsort cap anti 3 l:-2l:videos:us l:-2l:containers:us 100c 200c 300v]
   }
 
   test "returns the results limited by most viewed" {
     setup_data
-    assert_equal {r600 r200 r300} [r vsort cap anti 3 gp 100c 200c 300v 400c 500v 600v]
+    assert_equal {r600 r200 r300} [r vsort cap anti 3 l:-2l:videos:us l:-2l:containers:us 100c 200c 300v 400c 500v 600v]
   }
 
   test "applies holdbacks" {
     setup_data
     r sadd cap 200c 300v
-    assert_equal {r100 r600 r500} [r vsort cap anti 3 gp 100c 200c 300v 400c 500v 600v]
+    assert_equal {r100 r600 r500} [r vsort cap anti 3 l:-2l:videos:us l:-2l:containers:us 100c 200c 300v 400c 500v 600v]
   }
 
   test "applies anti_cap" {
     setup_data
     r sadd cap 200c 300v
     r sadd anti 300v
-    assert_equal {r100 r300 r600} [r vsort cap anti 3 gp 100c 200c 300v 400c 500v 600v]
+    assert_equal {r100 r300 r600} [r vsort cap anti 3 l:-2l:videos:us l:-2l:containers:us 100c 200c 300v 400c 500v 600v]
   }
 }
