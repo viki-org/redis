@@ -103,6 +103,8 @@ void vsortByNone(redisClient *c, vsortData *data) {
 long getScore(robj *item, robj *zscores) {
   double score;
 
+  if (zscores == NULL) { return 0; }
+
   if (zscores->encoding == REDIS_ENCODING_ZIPLIST) {
     return zzlFind(zscores->ptr, item, &score) == NULL ? 0 : (long)score;
   }
