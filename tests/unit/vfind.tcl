@@ -16,6 +16,16 @@ start_server {tags {"vfind"}} {
   }
 
   proc basics {encoding} {
+    if {$encoding == "ziplist"} {
+        r config set zset-max-ziplist-entries 128
+        r config set zset-max-ziplist-value 64
+    } elseif {$encoding == "skiplist"} {
+        r config set zset-max-ziplist-entries 0
+        r config set zset-max-ziplist-value 0
+    } else {
+        puts "Unknown sorted set encoding"
+        exit
+    }
     test "vdiff params 1 - $encoding" {
       set err "ERR wrong number of arguments for 'vfind' command"
       assert_error $err {r vfind }
