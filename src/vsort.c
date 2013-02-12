@@ -60,7 +60,7 @@ void vsortByViews(redisClient *c, vsortData *data) {
   robj *videoScores = data->videoScores;
   long count = data->count;
   int found = 0, lowest_at = 0;
-  double lowest;
+  double lowest = -1;
   double scores[count];
   robj **items = zmalloc(sizeof(robj*) * count);
 
