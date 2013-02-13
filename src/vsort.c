@@ -1,11 +1,11 @@
 #include "redis.h"
 #include "viki.h"
-#define VSORT_ID_START 6
+#define VSORT_ID_START 5
 
 typedef struct vsortData {
   int added;
   long count;
-  robj *meta_field, *videoScores, *containerScores;
+  robj *meta_field, *zscores;
   dict *cap, *anti_cap;
 } vsortData;
 
@@ -24,21 +24,19 @@ int itemScoreComparitor (const void* lhs, const void* rhs);
 void vsortCommand(redisClient *c) {
   long count;
   void *replylen;
-  robj *cap, *anti_cap, *videoScores, *containerScores;
+  robj *cap, *anti_cap, *zscores;
   vsortData *data;
 
   if ((getLongFromObjectOrReply(c, c->argv[3], &count, NULL) != REDIS_OK)) { return; }
   if ((cap = lookupKey(c->db, c->argv[1])) != NULL && checkType(c, cap, REDIS_SET)) { return; }
   if ((anti_cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
-  if ((videoScores = lookupKey(c->db, c->argv[4])) != NULL && checkType(c, videoScores, REDIS_ZSET)) { return; }
-  if ((containerScores = lookupKey(c->db, c->argv[5])) != NULL && checkType(c, containerScores, REDIS_ZSET)) { return; }
+  if ((zscores = lookupKey(c->db, c->argv[4])) != NULL && checkType(c, zscores, REDIS_ZSET)) { return; }
 
   data = zmalloc(sizeof(*data));
   data->meta_field = createStringObject("meta", 4);
   data->added = 0;
   data->count = count;
-  data->videoScores = videoScores;
-  data->containerScores = containerScores;
+  data->zscores = zscores;
   data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
   data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
 
@@ -56,8 +54,7 @@ void vsortCommand(redisClient *c) {
 void vsortByViews(redisClient *c, vsortData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
-  robj *containerScores = data->containerScores;
-  robj *videoScores = data->videoScores;
+  robj *zscores = data->zscores;
   long count = data->count;
   int found = 0, lowest_at = 0;
   double lowest = -1;
@@ -67,8 +64,6 @@ void vsortByViews(redisClient *c, vsortData *data) {
   for(int i = VSORT_ID_START; i < c->argc; ++i) {
     robj *item = c->argv[i];
     if (heldback(cap, anti_cap, item)) { continue; }
-    sds str = item->ptr;
-    robj *zscores = str[sdslen(str) - 1] == 'c' ? containerScores : videoScores;
     double score = getScore(item, zscores);
     if (found < count) {
       items[found] = item;
