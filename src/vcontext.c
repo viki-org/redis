@@ -61,7 +61,7 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count) {
     if ((filter_objects[i] = lookupKey(c->db, c->argv[i+2])) == NULL || checkType(c, filter_objects[i], REDIS_SET)) { goto reply; }
   }
   for(int i = 0; i < index_count; ++i) {
-    if ((index_objects[i] = lookupKey(c->db, c->argv[i+3+filter_count])) == NULL || checkType(c, index_objects[i], REDIS_SET)) { goto reply; }
+    if ((index_objects[i] = lookupKey(c->db, c->argv[i+3+filter_count])) != NULL && checkType(c, index_objects[i], REDIS_SET)) { goto reply; }
   }
   if ((cap_object = lookupKey(c->db, c->argv[filter_count + index_count + 3])) != NULL && checkType(c, cap_object, REDIS_SET)) { goto reply; }
 
@@ -72,7 +72,7 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count) {
     filters[i] = (dict*)filter_objects[i]->ptr;
   }
   for (int i = 0; i < index_count; ++i) {
-    indexes[i] = (dict*)index_objects[i]->ptr;
+    indexes[i] = index_objects[i] == NULL ? NULL : (dict*)index_objects[i]->ptr;
   }
 
   setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
@@ -82,6 +82,7 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count) {
 
   for(int i = 0; i < index_count; ++i) {
     index = indexes[i];
+    if (index == NULL) { continue; }
     while((setTypeNext(si, &item, &intobj)) != -1) {
       for(int j = 1; j < filter_count; ++j) {
         if (!isMember(filters[j], item)) { goto next; }

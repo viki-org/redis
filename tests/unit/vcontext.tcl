@@ -40,6 +40,11 @@ start_server {tags {"vcontext"}} {
     assert_equal {x:us x:ca} [r vcontext 1 x:g1 3 x:us x:ca x:mx cap]
   }
 
+  test "ignores invalid index" {
+    setup_data
+    assert_equal {x:us x:ca} [r vcontext 1 x:g1 4 x:us x:ca x:mx x:sg cap]
+  }
+
   test "returns valid sets with a multiple filters" {
     setup_data
     assert_equal {x:us} [r vcontext 2 x:g1 x:g2 3 x:us x:ca x:mx cap]
