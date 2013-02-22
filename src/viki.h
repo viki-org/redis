@@ -1,3 +1,4 @@
+int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 unsigned char *zzlFind(unsigned char *zl, robj *ele, double *score);
 int replyWithDetail(redisClient *c, robj *item, robj *detail_field);
 robj *getResourceValue(redisClient *c, robj *item, robj *field);

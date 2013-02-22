@@ -14,7 +14,6 @@ typedef struct vfindData {
 
 extern inline int heldback(dict *cap, dict *anti_cap, robj *item);
 
-int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 zskiplistNode* zslGetElementByRank(zskiplist *zsl, unsigned long rank);
 
 void vfindByZWithFilters(redisClient *c, vfindData *data);

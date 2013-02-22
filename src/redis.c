@@ -254,6 +254,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"vfind",vfindCommand,-9,"rm",0,vfindGetKeys,0,0,0,0,0},
     {"vsort",vsortCommand,-5,"rm",0,NULL,1,3,1,0,0},
+    {"vcontext",vcontextCommand,-4,"rm",0,vcontextGetKeys,0,0,0,0,0},
 };
 
 /*============================ Utility functions ============================ */
