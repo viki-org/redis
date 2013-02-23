@@ -59,10 +59,9 @@ void vcontextCommand(redisClient *c) {
 
   for(int i = 0; i < index_count; ++i) {
     if ((data->index_objects[i] = lookupKey(c->db, c->argv[i+3+filter_count])) != NULL && checkType(c, data->index_objects[i], REDIS_SET)) { goto reply; }
-  }
-  for (int i = 0; i < index_count; ++i) {
     data->indexes[i] = data->index_objects[i] == NULL ? NULL : (dict*)data->index_objects[i]->ptr;
   }
+
   if ((cap = lookupKey(c->db, c->argv[filter_count + index_count + 3])) != NULL && checkType(c, cap, REDIS_SET)) { goto reply; }
   data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
 
@@ -72,7 +71,6 @@ void vcontextCommand(redisClient *c) {
     for(int i = 0; i < filter_count; ++i) {
       if ((data->filter_objects[i] = lookupKey(c->db, c->argv[i+2])) == NULL || checkType(c, data->filter_objects[i], REDIS_SET)) { goto reply; }
     }
-
     qsort(data->filter_objects, filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
     for (int i = 0; i < filter_count; ++i) {
       data->filters[i] = (dict*)data->filter_objects[i]->ptr;
@@ -92,7 +90,6 @@ reply:
 }
 
 void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vcontextData *data) {
-  int64_t intobj;
   robj *item;
 
   dict *index;
@@ -101,46 +98,61 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vc
   robj **filter_objects = data->filter_objects;
   dict *cap = data->cap;
 
+  robj *dstobj = createSetObject();
+  dict *dstset = (dict*)dstobj->ptr;
+
   setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
   si->subject = filter_objects[0];
   si->encoding = si->subject->encoding;
   si->di = dictGetIterator(filters[0]);
 
+  while((setTypeNext(si, &item, NULL)) != -1) {
+    for(int j = 1; j < filter_count; ++j) {
+      if (!isMember(filters[j], item)) { goto next; }
+    }
+    if (!heldback(cap, NULL, item)) {
+      dictAdd(dstset, item, NULL);
+      incrRefCount(item);
+    }
+  next:
+    item = NULL;
+  }
+  dictReleaseIterator(si->di);
+
   for(int i = 0; i < index_count; ++i) {
     index = indexes[i];
     if (index == NULL) { continue; }
-    while((setTypeNext(si, &item, &intobj)) != -1) {
-      for(int j = 1; j < filter_count; ++j) {
-        if (!isMember(filters[j], item)) { goto next; }
-      }
-      if (!heldback(cap, NULL, item) && isMember(index, item)) {
+    si->subject = data->index_objects[i];
+    si->encoding = si->subject->encoding;
+    si->di = dictGetIterator(index);
+
+    while((setTypeNext(si, &item, NULL)) != -1) {
+      if (isMember(dstset, item)) {
         ++(data->added);
         addReplyBulk(c, c->argv[i+3+filter_count]);
         break;
       }
-  next:
-      item = NULL;
     }
+    dictReleaseIterator(si->di);
   }
-  dictReleaseIterator(si->di);
   zfree(si);
+  decrRefCount(dstobj);
 }
 
 void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data) {
-  int64_t intobj;
   robj *item;
 
   dict **indexes = data->indexes;
   robj **index_objects = data->index_objects;
   dict *cap = data->cap;
+  setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
 
   for(int i = 0; i < index_count; ++i) {
     if (indexes[i] == NULL) { continue; }
-    setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
     si->subject = index_objects[i];
     si->encoding = si->subject->encoding;
     si->di = dictGetIterator(indexes[i]);
-    while((setTypeNext(si, &item, &intobj)) != -1) {
+    while((setTypeNext(si, &item, NULL)) != -1) {
       if (!heldback(cap, NULL, item)) {
         ++(data->added);
         addReplyBulk(c, c->argv[i+3]);
@@ -148,6 +160,6 @@ void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data
       }
     }
     dictReleaseIterator(si->di);
-    zfree(si);
   }
+  zfree(si);
 }
