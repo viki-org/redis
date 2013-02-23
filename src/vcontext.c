@@ -98,7 +98,6 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vc
   dict *index;
   dict **indexes = data->indexes;
   dict **filters = data->filters;
-  robj **index_objects = data->index_objects;
   robj **filter_objects = data->filter_objects;
   dict *cap = data->cap;
 
