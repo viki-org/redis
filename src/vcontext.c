@@ -8,6 +8,7 @@ typedef struct vcontextData {
 } vcontextData;
 
 void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vcontextData *data);
+void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data);
 
 int *vcontextGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags) {
   int i, filter_count, index_count, total_count, *keys;
@@ -77,6 +78,8 @@ void vcontextCommand(redisClient *c) {
       data->filters[i] = (dict*)data->filter_objects[i]->ptr;
     }
     vcontextWithFilters(c, filter_count, index_count, data);
+  } else {
+    vcontextWithoutFilters(c, index_count, data);
   }
 
 reply:
@@ -122,4 +125,30 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vc
   }
   dictReleaseIterator(si->di);
   zfree(si);
+}
+
+void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data) {
+  int64_t intobj;
+  robj *item;
+
+  dict **indexes = data->indexes;
+  robj **index_objects = data->index_objects;
+  dict *cap = data->cap;
+
+  for(int i = 0; i < index_count; ++i) {
+    if (indexes[i] == NULL) { continue; }
+    setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
+    si->subject = index_objects[i];
+    si->encoding = si->subject->encoding;
+    si->di = dictGetIterator(indexes[i]);
+    while((setTypeNext(si, &item, &intobj)) != -1) {
+      if (!heldback(cap, NULL, item)) {
+        ++(data->added);
+        addReplyBulk(c, c->argv[i+3]);
+        break;
+      }
+    }
+    dictReleaseIterator(si->di);
+    zfree(si);
+  }
 }

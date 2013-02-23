@@ -9,7 +9,6 @@ start_server {tags {"vcontext"}} {
     r sadd cap  a            g       j
   }
 
-
   test "wrong number of parameters" {
     set err "ERR wrong number of arguments for 'vcontext' command"
     assert_error $err {r vcontext }
@@ -48,5 +47,10 @@ start_server {tags {"vcontext"}} {
   test "returns valid sets with a multiple filters" {
     setup_data
     assert_equal {x:us} [r vcontext 2 x:g1 x:g2 3 x:us x:ca x:mx cap]
+  }
+
+  test "returns valid set when no filter is given" {
+    setup_data
+    assert_equal {x:us x:ca} [r vcontext 0 3 x:us x:ca x:mx cap]
   }
 }
