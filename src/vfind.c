@@ -168,17 +168,25 @@ next:
   zfree(si);
 
   if (found > offset) {
-    if (offset == 0) {
-      ln = desc ? zsl->tail : zsl->header->level[0].forward;
-    } else {
-      ln = desc ? zslGetElementByRank(zsl, found - offset) : zslGetElementByRank(zsl, offset+1);
+    if (desc) {
+      ln = offset == 0 ? zsl->tail : zslGetElementByRank(zsl, found - offset);
+
+      while (added < found && added < count && ln != NULL) {
+        if (replyWithDetail(c, ln->obj, detail_field)) { added++; }
+        else { --found; }
+        ln = ln->backward;
+      }
+    }
+    else {
+      ln = offset == 0 ? zsl->header->level[0].forward : zslGetElementByRank(zsl, offset+1);
+
+      while (added < found && added < count && ln != NULL) {
+        if (replyWithDetail(c, ln->obj, detail_field)) { added++; }
+        else { --found; }
+        ln = ln->level[0].forward;
+      }
     }
 
-    while (added < found && added < count && ln != NULL) {
-      if (replyWithDetail(c, ln->obj, detail_field)) { added++; }
-      else { --found; }
-      ln = desc ? ln->backward : ln->level[0].forward;
-    }
   }
 
   decrRefCount(dstobj);
