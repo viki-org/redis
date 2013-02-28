@@ -13,6 +13,7 @@ start_server {tags {"vfind"}} {
     r zadd zset 1 a 10 b 3 c 15 d 5 e 6 f 7 g 0 mnm
     r sadd filter1 b c d f g h i o u mnm
     #zset and filter1 have d b g f c in common
+
   }
 
   proc basics {encoding} {
@@ -162,6 +163,7 @@ start_server {tags {"vfind"}} {
       r sadd cap b x
       assert_equal {s_f s_e 4} [r vfind zset cap anti 0 desc 2 2 3]
     }
+
   }
   basics ziplist
   basics skiplist

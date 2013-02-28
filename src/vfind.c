@@ -21,7 +21,7 @@ void vfindByFilters(redisClient *c, vfindData *data);
 
 static void initializeZsetIterator(vfindData *data);
 
-int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags) {
+int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys, int flags) {
   int i, num, *keys;
   REDIS_NOTUSED(cmd);
   REDIS_NOTUSED(flags);
@@ -44,16 +44,18 @@ int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, 
   return keys;
 }
 
+// Prepares all the sets(data, cap, anticap, filters) and calls vfindByFilters or vfindByZWithFilters
+// depending on the ratio of the input set and the smallest filter set
 void vfindCommand(redisClient *c) {
   long filter_count;
   void *replylen;
   long offset, count, up_to;
-  robj *zobj, *cap, *anti_cap;
+  robj *items, *cap, *anti_cap;
   vfindData *data;
 
   if ((getLongFromObjectOrReply(c, c->argv[4], &filter_count, NULL) != REDIS_OK)) { return; }
   if (filter_count > (c->argc-8)) {
-    addReply(c,shared.syntaxerr);
+    addReply(c, shared.syntaxerr);
     return;
   }
   if ((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &offset, NULL) != REDIS_OK)) { return; }
@@ -72,12 +74,13 @@ void vfindCommand(redisClient *c) {
   data->desc = 1;
 
   replylen = addDeferredMultiBulkLength(c);
-  if ((zobj = lookupKey(c->db, c->argv[1])) == NULL || zobj->type != REDIS_ZSET) { goto reply; }
+
+  if ((items = lookupKey(c->db, c->argv[1])) == NULL || checkType(c, items, REDIS_ZSET)) { goto reply; }
   if ((cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, cap, REDIS_SET)) { (data->added)++; goto reply; }
   if ((anti_cap = lookupKey(c->db, c->argv[3])) != NULL && checkType(c, anti_cap, REDIS_SET)) { (data->added)++; goto reply; }
 
-  zsetConvert(zobj, REDIS_ENCODING_SKIPLIST);
-  data->zset = zobj->ptr;
+  zsetConvert(items, REDIS_ENCODING_SKIPLIST);
+  data->zset = items->ptr;
   data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
   data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
 
@@ -95,7 +98,7 @@ void vfindCommand(redisClient *c) {
       data->filters[i] = (dict*)data->filter_objects[i]->ptr;
     }
     int size = dictSize(data->filters[0]);
-    int ratio = zsetLength(zobj) / size;
+    int ratio = zsetLength(items) / size;
 
     if ((size < 100 && ratio > 1) || (size < 500 && ratio > 2) || (size < 2000 && ratio > 3)) {
       vfindByFilters(c, data);
@@ -149,7 +152,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
     }
     if (heldback(cap, anti_cap, item)) { goto next; }
     dictEntry *de;
-    if ((de = dictFind(zset->dict,item)) != NULL) {
+    if ((de = dictFind(zset->dict, item)) != NULL) {
       score = *(double*)dictGetVal(de);
       zslInsert(zsl, score, item);
       incrRefCount(item);
