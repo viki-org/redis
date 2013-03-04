@@ -166,12 +166,30 @@ start_server {tags {"vfind"}} {
       assert_equal {s_f s_e 4} [r vfind zset cap anti 0 desc 2 2 3]
     }
 
-    test "bricks - $encoding" {
+    test "bricks 1 - $encoding" {
+      r del zset r:1b r:3v cap
       r zadd a_zset 1 1b 10 3v
       r hmset r:1b details "{\"name\":\"1b_details\"}" resource_id 3v
       r hmset r:3v details "{\"name\":\"3v_details\"}"
       r sadd cap a v c 3v
       assert_equal {{{"name":"1b_details", "resource": {"name":"3v_details"}}} 1} [r vfind a_zset cap 0 0 desc 0 10 10]
+    }
+
+    test "bricks 2 - $encoding" {
+      r del zset r:1b r:3v cap
+      r zadd a_zset 1 1b 10 3v
+      r hmset r:1b details "{\"name\":\"1b_details\"}"
+      r hmset r:3v details "{\"name\":\"3v_details\"}"
+      r sadd cap a v c 3v
+      assert_equal {{{"name":"1b_details"}} 1} [r vfind a_zset cap 0 0 desc 0 10 10]
+    }
+
+    test "bricks 3 - $encoding" {
+      r del zset r:1b r:3v cap
+      r zadd a_zset 1 1b 10 3v
+      r hmset r:1b details "{\"name\":\"1b_details\"}" resource_id 3v
+      r sadd cap a v c 3v
+      assert_equal {{{"name":"1b_details"}} 1} [r vfind a_zset cap 0 0 desc 0 10 10]
     }
   }
   basics ziplist

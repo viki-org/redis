@@ -19,8 +19,10 @@ robj *getResourceValue(redisClient *c, robj *item, robj *field) {
   sds key_str = item->ptr;
   if (key_str[sdslen(key_str) - 1] == 'b') {
     robj *extended_value = mergeBrickResourceDetails(c, value, key, field);
-    decrRefCount(value);
-    value = extended_value;
+    if (extended_value != value){
+      decrRefCount(value);
+      value = extended_value;
+    }
   }
 
   decrRefCount(key);
@@ -47,13 +49,13 @@ robj *mergeBrickResourceDetails(redisClient *c, robj *brick, robj *key, robj *fi
   robj *resource_field = createStringObject("resource_id", 11);
   robj *resource_id = getHashValue(c, key, resource_field);
   decrRefCount(resource_field);
-  if (resource_id == NULL) { return 0; }
+  if (resource_id == NULL) { return brick; }
 
   robj *resource_key = generateKey(resource_id);
   decrRefCount(resource_id);
   robj *resource = getHashValue(c, resource_key, field);
   decrRefCount(resource_key);
-  if (resource == NULL) { return 0; }
+  if (resource == NULL) { return brick; }
 
   int brick_length = strlen(brick->ptr);
   int resource_length = strlen(resource->ptr);
