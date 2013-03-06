@@ -29,7 +29,7 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
   num = atoi(argv[4]->ptr) + 3;
   /* Sanity check. Don't return any key if the command is going to
    * reply with syntax error. */
-  if (num > (argc-8)) {
+  if (num > (argc-9)) {
     *numkeys = 0;
     return NULL;
   }
@@ -54,7 +54,7 @@ void vfindCommand(redisClient *c) {
   vfindData *data;
 
   if ((getLongFromObjectOrReply(c, c->argv[4], &filter_count, NULL) != REDIS_OK)) { return; }
-  if (filter_count > (c->argc-8)) {
+  if (filter_count > (c->argc-9)) {
     addReply(c, shared.syntaxerr);
     return;
   }
