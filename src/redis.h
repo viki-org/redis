@@ -67,13 +67,16 @@
 #define REDIS_ERR               -1
 
 /* Static server configuration */
-#define REDIS_HZ                100     /* Time interrupt calls/sec. */
+#define REDIS_DEFAULT_HZ        10      /* Time interrupt calls/sec. */
+#define REDIS_MIN_HZ            1
+#define REDIS_MAX_HZ            500 
 #define REDIS_SERVERPORT        6379    /* TCP port */
 #define REDIS_MAXIDLETIME       0       /* default client timeout: infinite */
 #define REDIS_DEFAULT_DBNUM     16
 #define REDIS_CONFIGLINE_MAX    1024
 #define REDIS_EXPIRELOOKUPS_PER_CRON    10 /* lookup 10 expires per loop */
 #define REDIS_EXPIRELOOKUPS_TIME_PERC   25 /* CPU max % for keys collection */
+#define REDIS_DBCRON_DBS_PER_CALL 16
 #define REDIS_MAX_WRITE_PER_EVENT (1024*64)
 #define REDIS_SHARED_SELECT_CMDS 10
 #define REDIS_SHARED_INTEGERS 10000
@@ -291,8 +294,8 @@
 
 /* Using the following macro you can run code inside serverCron() with the
  * specified period, specified in milliseconds.
- * The actual resolution depends on REDIS_HZ. */
-#define run_with_period(_ms_) if (!(server.cronloops%((_ms_)/(1000/REDIS_HZ))))
+ * The actual resolution depends on server.hz. */
+#define run_with_period(_ms_) if ((_ms_ <= 1000/server.hz) || !(server.cronloops%((_ms_)/(1000/server.hz))))
 
 /* We can print the stacktrace, so our assert is defined this way: */
 #define redisAssertWithInfo(_c,_o,_e) ((_e)?(void)0 : (_redisAssertWithInfo(_c,_o,#_e,__FILE__,__LINE__),_exit(1)))
@@ -494,8 +497,10 @@ typedef struct redisOpArray {
 
 struct redisServer {
     /* General */
+    int hz;                     /* serverCron() calls frequency in hertz */
     redisDb *db;
-    dict *commands;             /* Command table hash table */
+    dict *commands;             /* Command table */
+    dict *orig_commands;        /* Command table before command renaming. */
     aeEventLoop *el;
     unsigned lruclock:22;       /* Clock incrementing every minute, for LRU */
     unsigned lruclock_padding:10;
@@ -945,6 +950,7 @@ int processCommand(redisClient *c);
 void setupSignalHandlers(void);
 struct redisCommand *lookupCommand(sds name);
 struct redisCommand *lookupCommandByCString(char *s);
+struct redisCommand *lookupCommandOrOriginal(sds name);
 void call(redisClient *c, int flags);
 void propagate(struct redisCommand *cmd, int dbid, robj **argv, int argc, int flags);
 void alsoPropagate(struct redisCommand *cmd, int dbid, robj **argv, int argc, int target);

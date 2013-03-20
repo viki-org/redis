@@ -68,11 +68,21 @@ void loadServerConfigFromString(char *config) {
         linenum = i+1;
         lines[i] = sdstrim(lines[i]," \t\r\n");
 
-        /* Skip comments and blank lines*/
+        /* Skip comments and blank lines */
         if (lines[i][0] == '#' || lines[i][0] == '\0') continue;
 
         /* Split into arguments */
         argv = sdssplitargs(lines[i],&argc);
+        if (argv == NULL) {
+            err = "Unbalanced quotes in configuration line";
+            goto loaderr;
+        }
+
+        /* Skip this line if the resulting command vector is empty. */
+        if (argc == 0) {
+            sdsfreesplitres(argv,argc);
+            return;
+        }
         sdstolower(argv[0]);
 
         /* Execute config directives */
@@ -265,6 +275,10 @@ void loadServerConfigFromString(char *config) {
             if ((server.daemonize = yesnotoi(argv[1])) == -1) {
                 err = "argument must be 'yes' or 'no'"; goto loaderr;
             }
+        } else if (!strcasecmp(argv[0],"hz") && argc == 2) {
+            server.hz = atoi(argv[1]);
+            if (server.hz < REDIS_MIN_HZ) server.hz = REDIS_MIN_HZ;
+            if (server.hz > REDIS_MAX_HZ) server.hz = REDIS_MAX_HZ;
         } else if (!strcasecmp(argv[0],"appendonly") && argc == 2) {
             int yes;
 
@@ -484,6 +498,12 @@ void configSetCommand(redisClient *c) {
             }
             freeMemoryIfNeeded();
         }
+    } else if (!strcasecmp(c->argv[2]->ptr,"hz")) {
+        if (getLongLongFromObject(o,&ll) == REDIS_ERR ||
+            ll < 0) goto badfmt;
+        server.hz = (int) ll;
+        if (server.hz < REDIS_MIN_HZ) server.hz = REDIS_MIN_HZ;
+        if (server.hz > REDIS_MAX_HZ) server.hz = REDIS_MAX_HZ;
     } else if (!strcasecmp(c->argv[2]->ptr,"maxmemory-policy")) {
         if (!strcasecmp(o->ptr,"volatile-lru")) {
             server.maxmemory_policy = REDIS_MAXMEMORY_VOLATILE_LRU;
@@ -810,6 +830,7 @@ void configGetCommand(redisClient *c) {
     config_get_numerical_field("maxclients",server.maxclients);
     config_get_numerical_field("watchdog-period",server.watchdog_period);
     config_get_numerical_field("slave-priority",server.slave_priority);
+    config_get_numerical_field("hz",server.hz);
 
     /* Bool (yes/no) values */
     config_get_bool_field("no-appendfsync-on-rewrite",

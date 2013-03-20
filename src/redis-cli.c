@@ -56,6 +56,7 @@
 #define OUTPUT_STANDARD 0
 #define OUTPUT_RAW 1
 #define OUTPUT_CSV 2
+#define REDIS_CLI_KEEPALIVE_INTERVAL 15 /* seconds */
 
 static redisContext *context;
 static struct config {
@@ -331,6 +332,12 @@ static int cliConnect(int force) {
             context = NULL;
             return REDIS_ERR;
         }
+
+        /* Set aggressive KEEP_ALIVE socket option in the Redis context socket
+         * in order to prevent timeouts caused by the execution of long
+         * commands. At the same time this improves the detection of real
+         * errors. */
+        anetKeepAlive(NULL, context->fd, REDIS_CLI_KEEPALIVE_INTERVAL);
 
         /* Do AUTH and select the right DB. */
         if (cliAuth() != REDIS_OK)
@@ -843,8 +850,7 @@ static void repl() {
                 }
             }
             /* Free the argument vector */
-            while(argc--) sdsfree(argv[argc]);
-            zfree(argv);
+            sdsfreesplitres(argv,argc);
         }
         /* linenoise() returns malloc-ed lines like readline() */
         free(line);
@@ -1199,7 +1205,11 @@ static void findBigKeys(void) {
             fprintf(stderr, "RANDOMKEY error: %s\n",
                 reply1->str);
             exit(1);
+        } else if (reply1->type == REDIS_REPLY_NIL) {
+            fprintf(stderr, "It looks like the database is empty!\n");
+            exit(1);
         }
+
         /* Get the key type */
         reply2 = redisCommand(context,"TYPE %s",reply1->str);
         assert(reply2 && reply2->type == REDIS_REPLY_STATUS);
