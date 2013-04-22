@@ -13,9 +13,6 @@ start_server {tags {"vfind"}} {
     r hset r:mnm details good_stuff
 
     r sadd filter1 v c d f g h i o u mnm
-
-    #zset and filter1 have d v g f c in common
-
   }
 
   proc basics {encoding} {
@@ -41,6 +38,7 @@ start_server {tags {"vfind"}} {
 
     test "vdiff params 2 - $encoding" {
       set err "ERR value is not an integer or out of range"
+      r zadd a 1 b
       assert_error $err {r vfind a v x a x 0 10 0}
       assert_error $err {r vfind a v x 0 desc a 0 0}
       assert_error $err {r vfind a v x 0 desc 0 a 0}
@@ -63,6 +61,14 @@ start_server {tags {"vfind"}} {
       assert_error $err {r vfind zset cap 0 0 desc a 10 10}
       assert_error $err {r vfind zset cap 0 0 desc 0 v 10}
       assert_error $err {r vfind zset cap 0 0 desc 0 0 v}
+    }
+
+    test "vfind invalid type params 1 - $encoding" {
+      set err "ERR Operation against a key holding the wrong kind of value"
+      r sadd myset a v c d e f g mnm
+
+      assert_error $err {r vfind myset 0 0 0 desc 0 10 10}
+      assert_equal {set} [r type myset]
     }
 
     test "vdiff 1 - $encoding" {
@@ -193,5 +199,5 @@ start_server {tags {"vfind"}} {
     }
   }
   basics ziplist
- basics skiplist
+  basics skiplist
 }

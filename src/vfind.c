@@ -53,14 +53,16 @@ void vfindCommand(redisClient *c) {
   robj *items, *cap, *anti_cap;
   vfindData *data;
 
+  // All the data checks
+  if ((items = lookupKey(c->db, c->argv[1])) == NULL) { addReplyLongLong(c, 0); return; }
+  if (checkType(c, items, REDIS_ZSET)) { return; }
+  if ((cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, cap, REDIS_SET)) { return; }
+  if ((anti_cap = lookupKey(c->db, c->argv[3])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
   if ((getLongFromObjectOrReply(c, c->argv[4], &filter_count, NULL) != REDIS_OK)) { return; }
-  if (filter_count > (c->argc-9)) {
-    addReply(c, shared.syntaxerr);
-    return;
-  }
   if ((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &offset, NULL) != REDIS_OK)) { return; }
   if ((getLongFromObjectOrReply(c, c->argv[7 + filter_count], &count, NULL) != REDIS_OK)) { return; }
   if ((getLongFromObjectOrReply(c, c->argv[8 + filter_count], &up_to, NULL) != REDIS_OK)) { return; }
+  if (filter_count > (c->argc-9)) { addReply(c, shared.syntaxerr); return; }
 
   data = zmalloc(sizeof(*data));
   data->detail_field = createStringObject("details", 7);
@@ -74,10 +76,6 @@ void vfindCommand(redisClient *c) {
   data->desc = 1;
 
   replylen = addDeferredMultiBulkLength(c);
-
-  if ((items = lookupKey(c->db, c->argv[1])) == NULL || checkType(c, items, REDIS_ZSET)) { goto reply; }
-  if ((cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, cap, REDIS_SET)) { (data->added)++; goto reply; }
-  if ((anti_cap = lookupKey(c->db, c->argv[3])) != NULL && checkType(c, anti_cap, REDIS_SET)) { (data->added)++; goto reply; }
 
   zsetConvert(items, REDIS_ENCODING_SKIPLIST);
   data->zset = items->ptr;
