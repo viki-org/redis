@@ -54,7 +54,11 @@ void vfindCommand(redisClient *c) {
   vfindData *data;
 
   // All the data checks
-  if ((items = lookupKey(c->db, c->argv[1])) == NULL) { addReplyLongLong(c, 0); return; }
+  if ((items = lookupKey(c->db, c->argv[1])) == NULL) {
+    addReplyMultiBulkLen(c, 1);
+    addReplyLongLong(c, 0);
+    return;
+  }
   if (checkType(c, items, REDIS_ZSET)) { return; }
   if ((cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, cap, REDIS_SET)) { return; }
   if ((anti_cap = lookupKey(c->db, c->argv[3])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
