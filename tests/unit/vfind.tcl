@@ -197,6 +197,17 @@ start_server {tags {"vfind"}} {
       r sadd cap a v c 3v
       assert_equal {{{"name":"1b_details"}} 1} [r vfind a_zset cap 0 0 desc 0 10 10]
     }
+
+    test "vdiff get specific field - $encoding" {
+      setup_data
+      r hset r:a en sa_en
+      r hset r:c en sc_en
+      r hset r:d en sd_en
+      r hset r:e en se_en
+      r hset r:f en sf_en
+      r hset r:g en sg_en
+      assert_equal {sd_en sg_en sf_en sc_en 4} [r vfind zset cap anti 1 filter1 desc 0 10 10 en]
+    }
   }
   basics ziplist
   basics skiplist

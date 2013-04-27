@@ -50,6 +50,7 @@ void vfindCommand(redisClient *c) {
   long filter_count;
   void *replylen;
   long offset, count, up_to;
+  int default_field;
   robj *items, *cap, *anti_cap;
   vfindData *data;
 
@@ -69,7 +70,8 @@ void vfindCommand(redisClient *c) {
   if (filter_count > (c->argc-9)) { addReply(c, shared.syntaxerr); return; }
 
   data = zmalloc(sizeof(*data));
-  data->detail_field = createStringObject("details", 7);
+  default_field = c->argc == (10 + filter_count);
+  data->detail_field = default_field ? c->argv[9 + filter_count] : createStringObject("details", 7);
   data->filters = NULL;
   data->filter_objects = NULL;
   data->offset = offset;
@@ -115,7 +117,7 @@ reply:
   setDeferredMultiBulkLength(c, replylen, (data->added)+1);
   if (data->filters != NULL) { zfree(data->filters); }
   if (data->filter_objects != NULL) { zfree(data->filter_objects); }
-  decrRefCount(data->detail_field);
+  if (!default_field) { decrRefCount(data->detail_field); }
   zfree(data);
 }
 
