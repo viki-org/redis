@@ -69,3 +69,14 @@ robj *mergeBrickResourceDetails(redisClient *c, robj *brick, robj *key, robj *fi
   decrRefCount(resource);
   return data;
 }
+
+double getScore(robj *zsetObj, robj *item) {
+  if (zsetObj == NULL) { return -1; }
+  if (zsetObj->encoding == REDIS_ENCODING_ZIPLIST) {
+    double score;
+    return zzlFind(zsetObj->ptr, item, &score) == NULL ? -1 : score;
+  }
+  zset *zs = zsetObj->ptr;
+  dictEntry *de = dictFind(zs->dict, item);
+  return de == NULL ? -1 : *(double*)dictGetVal(de);
+}

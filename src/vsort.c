@@ -1,16 +1,15 @@
 #include "redis.h"
 #include "viki.h"
-#define VSORT_ID_START 5
+#define VSORT_ID_START 7
 
 typedef struct vsortData {
   int added;
   long count;
-  robj *meta_field, *zscores;
-  dict *cap, *anti_cap;
+  dict *cap, *anti_cap, *exclusion_list;
+  robj *meta_field, *zscores, *inclusion_list;
 } vsortData;
 
-typedef struct
-{
+typedef struct {
   robj *item;
   double score;
 } itemScore;
@@ -18,19 +17,21 @@ typedef struct
 
 void vsortByViews(redisClient *c, vsortData *data);
 void vsortByNone(redisClient *c, vsortData *data);
-double getScore(robj *item, robj *zscores);
+double getScore(robj *zsetObj, robj *item);
 int itemScoreComparitor (const void* lhs, const void* rhs);
 
 void vsortCommand(redisClient *c) {
   long count;
   void *replylen;
-  robj *cap, *anti_cap, *zscores;
+  robj *cap, *anti_cap, *zscores, *inclusion_list, *exclusion_list;
   vsortData *data;
 
   if ((getLongFromObjectOrReply(c, c->argv[3], &count, NULL) != REDIS_OK)) { return; }
   if ((cap = lookupKey(c->db, c->argv[1])) != NULL && checkType(c, cap, REDIS_SET)) { return; }
   if ((anti_cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
   if ((zscores = lookupKey(c->db, c->argv[4])) != NULL && checkType(c, zscores, REDIS_ZSET)) { return; }
+  if ((inclusion_list = lookupKey(c->db, c->argv[5])) != NULL && checkType(c, inclusion_list, REDIS_ZSET)) { return; }
+  if ((exclusion_list = lookupKey(c->db, c->argv[6])) != NULL && checkType(c, exclusion_list, REDIS_SET)) { return; }
 
   data = zmalloc(sizeof(*data));
   data->meta_field = createStringObject("meta", 4);
@@ -39,6 +40,8 @@ void vsortCommand(redisClient *c) {
   data->zscores = zscores;
   data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
   data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
+  data->inclusion_list = inclusion_list;
+  data->exclusion_list = (exclusion_list == NULL) ? NULL : (dict*)exclusion_list->ptr;;
 
   replylen = addDeferredMultiBulkLength(c);
   if (count < c->argc - VSORT_ID_START) {
@@ -55,6 +58,8 @@ void vsortByViews(redisClient *c, vsortData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
   robj *zscores = data->zscores;
+  robj *inclusion_list = data->inclusion_list;
+  dict *exclusion_list = data->exclusion_list;
   long count = data->count;
   int found = 0, lowest_at = 0;
   double lowest = -1;
@@ -63,8 +68,8 @@ void vsortByViews(redisClient *c, vsortData *data) {
 
   for(int i = VSORT_ID_START; i < c->argc; ++i) {
     robj *item = c->argv[i];
-    if (heldback(cap, anti_cap, item)) { continue; }
-    double score = getScore(item, zscores);
+    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { continue; }
+    double score = getScore(zscores, item);
     if (found < count) {
       items[found] = item;
       if (lowest == -1 || score <= lowest) { //it's better to replace later items with the same score, as the input might be sorted some way (it is!)
@@ -109,27 +114,16 @@ void vsortByViews(redisClient *c, vsortData *data) {
 void vsortByNone(redisClient *c, vsortData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
+  robj *inclusion_list = data->inclusion_list;
+  dict *exclusion_list = data->exclusion_list;
 
   for(int i = VSORT_ID_START; i < c->argc; ++i) {
     robj *item = c->argv[i];
-    if (heldback(cap, anti_cap, item)) { continue; }
+    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { continue; }
     if (replyWithDetail(c, item, data->meta_field)) {
       ++(data->added);
     }
   }
-}
-
-double getScore(robj *item, robj *zscores) {
-  double score;
-
-  if (zscores == NULL) { return 0; }
-
-  if (zscores->encoding == REDIS_ENCODING_ZIPLIST) {
-    return zzlFind(zscores->ptr, item, &score) == NULL ? 0 : score;
-  }
-  zset *zs = zscores->ptr;
-  dictEntry *de = dictFind(zs->dict, item);
-  return de == NULL ? 0 : *(double*)dictGetVal(de);
 }
 
 int itemScoreComparitor (const void* lhs, const void* rhs)
