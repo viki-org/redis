@@ -28,6 +28,7 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
   REDIS_NOTUSED(cmd);
   REDIS_NOTUSED(flags);
 
+  /* 5 keys (zset, cap, anticap, incl, excl) in addition to filters key */
   num = atoi(argv[11]->ptr) + 5;
   /* Sanity check. Don't return any key if the command is going to
    * reply with syntax error. */
@@ -36,11 +37,17 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
     return NULL;
   }
   keys = zmalloc(sizeof(int)*num);
+  // zset key position
   keys[0] = 1;
+  // cap key position
   keys[1] = 2;
+  // anticap key position
   keys[2] = 3;
+  // incl key position
   keys[3] = 8;
+  // excl key position
   keys[4] = 9;
+  // filters key positions
   for (i = 5; i < num; ++i) {
     keys[i] = 7+i;
   }
@@ -50,6 +57,7 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
 
 // Prepares all the sets(data, cap, anticap, filters) and calls vfindByFilters or vfindByZWithFilters
 // depending on the ratio of the input set and the smallest filter set
+// Syntax: vfind zset cap anticap offset count upto direction incl excl detail_field filter_count [filter keys]
 void vfindCommand(redisClient *c) {
   long filter_count;
   void *replylen;
@@ -131,6 +139,7 @@ reply:
   zfree(data);
 }
 
+// Used if the smallest filter has a small size compared to zset's size
 void vfindByFilters(redisClient *c, vfindData *data) {
   zset *dstzset;
   robj *item;
@@ -209,6 +218,7 @@ next:
   data->added = added;
 }
 
+// Used if the smallest filter has a relatively big size compared to zset's size
 void vfindByZWithFilters(redisClient *c, vfindData *data) {
   int desc = data->desc;
   int found = 0;
