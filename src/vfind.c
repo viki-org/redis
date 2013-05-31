@@ -150,6 +150,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   zskiplistNode *ln;
 
   zset *metadstzset;
+  robj *metadataObj;
   zskiplist *metazsl;
   zskiplistNode *metaln;
 
@@ -175,7 +176,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
 
   robj *metadstobj = createZsetObject();
   metadstzset = metadstobj->ptr;
-  metazsl = dstzset->zsl;
+  metazsl = metadstzset->zsl;
 
   setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
   si->subject = data->filter_objects[0];
@@ -205,7 +206,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       ++found;
 
       // Generate metadata object and add to metadata set
-      robj *metadataObj = generateMetadataObject(metadata);
+      metadataObj = generateMetadataObject(metadata);
       zslInsert(metazsl, score, metadataObj);
       incrRefCount(metadataObj);
       dictAdd(metadstzset->dict, metadataObj, &score);
@@ -215,6 +216,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
 next:
     zfree(metadata);
     item = NULL;
+    metadataObj = NULL;
   }
 
   dictReleaseIterator(si->di);
