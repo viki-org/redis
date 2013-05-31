@@ -234,10 +234,17 @@ start_server {tags {"vfind"}} {
       assert_equal {s_g NON-BLOCKED 1} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
     }
 
-    test "vfind applies include blocked list - $encoding" {
+    test "vfind applies include blocked list using vfindZWithFilters - $encoding" {
       setup_data
       r sadd cap v x
       assert_equal {s_v BLOCKED s_g NON-BLOCKED 6} [r vfind zset cap 0 1 2 10 desc incl excl yes details 1 filter1]
+    }
+
+    test "vfind applies include blocked list using vfindWithFilters - $encoding" {
+      setup_data
+      r sadd filter2 d v g
+      r sadd cap d
+      assert_equal {s_g NON-BLOCKED s_v NON-BLOCKED s_d BLOCKED 3} [r vfind zset cap 0 0 10 11 asc incl excl yes details 2 filter1 filter2]
     }
   }
   basics ziplist

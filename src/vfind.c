@@ -134,7 +134,7 @@ void vfindCommand(redisClient *c) {
   initializeZsetIterator(data);
   vfindByZWithFilters(c, data);
 
-reply:
+  reply:
   addReplyLongLong(c, data->found);
   setDeferredMultiBulkLength(c, replylen, (data->added) * 2 +1);
   if (data->filters != NULL) { zfree(data->filters); }
@@ -148,11 +148,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   robj *item;
   zskiplist *zsl;
   zskiplistNode *ln;
-
-  zset *metadstzset;
-  robj *metadataObj;
-  zskiplist *metazsl;
-  zskiplistNode *metaln;
 
   int desc = data->desc;
   long offset = data->offset;
@@ -174,28 +169,16 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   dstzset = dstobj->ptr;
   zsl = dstzset->zsl;
 
-  robj *metadstobj = createZsetObject();
-  metadstzset = metadstobj->ptr;
-  metazsl = metadstzset->zsl;
-
   setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
   si->subject = data->filter_objects[0];
   si->encoding = si->subject->encoding;
   si->di = dictGetIterator(filters[0]);
 
   while((setTypeNext(si, &item, &intobj)) != -1) {
-    // Init metadata information
-    vikiResultMetadata *metadata = zmalloc(sizeof(*metadata));
-    metadata->blocked = 0;
-    
     for(int i = 1; i < filter_count; ++i) {
       if (!isMember(filters[i], item)) { goto next; }
     }
-    
-    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { 
-      if (data->include_blocked == 1) { metadata->blocked = 1; }  
-      else { goto next; }
-    }
+    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item) && (data->include_blocked == 0)) { goto next; }
     dictEntry *de;
     if ((de = dictFind(zset->dict, item)) != NULL) {
       score = *(double*)dictGetVal(de);
@@ -204,60 +187,60 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       dictAdd(dstzset->dict, item, &score);
       incrRefCount(item);
       ++found;
-
-      // Generate metadata object and add to metadata set
-      metadataObj = generateMetadataObject(metadata);
-      zslInsert(metazsl, score, metadataObj);
-      incrRefCount(metadataObj);
-      dictAdd(metadstzset->dict, metadataObj, &score);
-      incrRefCount(metadataObj);
     }
-
-next:
-    zfree(metadata);
+    next:
     item = NULL;
-    metadataObj = NULL;
   }
 
   dictReleaseIterator(si->di);
   zfree(si);
 
+  vikiResultMetadata *metadata;
+  metadata = zmalloc(sizeof(*metadata));
+
   if (found > offset) {
     if (desc) {
       ln = offset == 0 ? zsl->tail : zslGetElementByRank(zsl, found - offset);
-      metaln = offset == 0 ? metazsl->tail : zslGetElementByRank(metazsl, found - offset);
 
       while (added < found && added < count && ln != NULL) {
+        metadata->blocked = 0;
+        if (heldback(cap, anti_cap, inclusion_list, exclusion_list, ln->obj)) {
+          metadata->blocked = 1;
+        }
+
         if (replyWithDetail(c, ln->obj, detail_field)) { 
           added++; 
-          replyWithMetadata(c, metaln->obj);
+          replyWithMetadata(c, generateMetadataObject(metadata));
         }
         else { --found; }
         ln = ln->backward;
-        metaln = metaln->backward;
       }
     }
     else {
       ln = offset == 0 ? zsl->header->level[0].forward : zslGetElementByRank(zsl, offset+1);
-      metaln = offset == 0 ? metazsl->header->level[0].forward : zslGetElementByRank(metazsl, offset+1);
 
       while (added < found && added < count && ln != NULL) {
+        metadata->blocked = 0;
+        if (heldback(cap, anti_cap, inclusion_list, exclusion_list, ln->obj)) {
+          metadata->blocked = 1;
+        }
+        
         if (replyWithDetail(c, ln->obj, detail_field)) { 
           added++; 
-          replyWithMetadata(c, metaln->obj);
+          replyWithMetadata(c, generateMetadataObject(metadata));
         }
         else { --found; }
         ln = ln->level[0].forward;
-        metaln = metaln->level[0].forward;
       }
     }
   }
 
+  zfree(metadata);
   decrRefCount(dstobj);
-  decrRefCount(metadstobj);
   data->found = found;
   data->added = added;
 }
+
 
 // Used if the smallest filter has a relatively big size compared to zset's size
 void vfindByZWithFilters(redisClient *c, vfindData *data) {
@@ -301,7 +284,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
     }
 
     if (added == count && found >= up_to) { break; }
-next:
+    next:
     ln = desc ? ln->backward : ln->level[0].forward;
   }
 
