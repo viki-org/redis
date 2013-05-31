@@ -126,10 +126,10 @@ void vfindCommand(redisClient *c) {
     int size = dictSize(data->filters[0]);
     int ratio = zsetLength(items) / size;
 
-    // if ((size < 100 && ratio > 1) || (size < 500 && ratio > 2) || (size < 2000 && ratio > 3)) {
-    //   vfindByFilters(c, data);
-    //   goto reply;
-    // }
+    if ((size < 100 && ratio > 1) || (size < 500 && ratio > 2) || (size < 2000 && ratio > 3)) {
+      vfindByFilters(c, data);
+      goto reply;
+    }
   }
   initializeZsetIterator(data);
   vfindByZWithFilters(c, data);
@@ -149,6 +149,10 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   zskiplist *zsl;
   zskiplistNode *ln;
 
+  zset *metadstzset;
+  zskiplist *metazsl;
+  zskiplistNode *metaln;
+
   int desc = data->desc;
   long offset = data->offset;
   long count = data->count;
@@ -164,12 +168,14 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   robj *detail_field = data->detail_field;
   int64_t intobj;
   double score;
-  vikiResultMetadata *metadata;
-  metadata = zmalloc(sizeof(*metadata));
 
   robj *dstobj = createZsetObject();
   dstzset = dstobj->ptr;
   zsl = dstzset->zsl;
+
+  robj *metadstobj = createZsetObject();
+  metadstzset = metadstobj->ptr;
+  metazsl = dstzset->zsl;
 
   setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
   si->subject = data->filter_objects[0];
@@ -177,12 +183,13 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   si->di = dictGetIterator(filters[0]);
 
   while((setTypeNext(si, &item, &intobj)) != -1) {
+    // Init metadata information
+    vikiResultMetadata *metadata = zmalloc(sizeof(*metadata));
+    metadata->blocked = 0;
+    
     for(int i = 1; i < filter_count; ++i) {
       if (!isMember(filters[i], item)) { goto next; }
     }
-
-    // Init metadata information
-    metadata->blocked = 0;
     
     if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { 
       if (data->include_blocked == 1) { metadata->blocked = 1; }  
@@ -196,8 +203,17 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       dictAdd(dstzset->dict, item, &score);
       incrRefCount(item);
       ++found;
+
+      // Generate metadata object and add to metadata set
+      robj *metadataObj = generateMetadataObject(metadata);
+      zslInsert(metazsl, score, metadataObj);
+      incrRefCount(metadataObj);
+      dictAdd(metadstzset->dict, metadataObj, &score);
+      incrRefCount(metadataObj);
     }
+
 next:
+    zfree(metadata);
     item = NULL;
   }
 
@@ -207,26 +223,36 @@ next:
   if (found > offset) {
     if (desc) {
       ln = offset == 0 ? zsl->tail : zslGetElementByRank(zsl, found - offset);
+      metaln = offset == 0 ? metazsl->tail : zslGetElementByRank(metazsl, found - offset);
 
       while (added < found && added < count && ln != NULL) {
-        if (replyWithDetail(c, ln->obj, detail_field)) { added++; }
+        if (replyWithDetail(c, ln->obj, detail_field)) { 
+          added++; 
+          replyWithMetadata(c, metaln->obj);
+        }
         else { --found; }
         ln = ln->backward;
+        metaln = metaln->backward;
       }
     }
     else {
       ln = offset == 0 ? zsl->header->level[0].forward : zslGetElementByRank(zsl, offset+1);
+      metaln = offset == 0 ? metazsl->header->level[0].forward : zslGetElementByRank(metazsl, offset+1);
 
       while (added < found && added < count && ln != NULL) {
-        if (replyWithDetail(c, ln->obj, detail_field)) { added++; }
+        if (replyWithDetail(c, ln->obj, detail_field)) { 
+          added++; 
+          replyWithMetadata(c, metaln->obj);
+        }
         else { --found; }
         ln = ln->level[0].forward;
+        metaln = metaln->level[0].forward;
       }
     }
   }
 
-  zfree(metadata);
   decrRefCount(dstobj);
+  decrRefCount(metadstobj);
   data->found = found;
   data->added = added;
 }
@@ -267,7 +293,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
     if (found++ >= offset && added < count) {
       if (replyWithDetail(c, item, detail_field)) { 
         added++; 
-        replyWithMetadata(c, metadata);
+        replyWithMetadata(c, generateMetadataObject(metadata));
       }
       else { --found; }
     }

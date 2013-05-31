@@ -2,8 +2,7 @@
 #include "viki.h"
 #include <stdio.h>
 
-int replyWithMetadata(redisClient *c, vikiResultMetadata *metadata) {
-  robj *metadataObj = generateMetadataObject(metadata);
+int replyWithMetadata(redisClient *c, robj *metadataObj) {
   addReplyBulk(c, metadataObj);
   decrRefCount(metadataObj);
   return 1;

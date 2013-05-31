@@ -5,7 +5,7 @@ typedef struct vikiResultMetadata {
 int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 unsigned char *zzlFind(unsigned char *zl, robj *ele, double *score);
 int replyWithDetail(redisClient *c, robj *item, robj *detail_field);
-int replyWithMetadata(redisClient *c, vikiResultMetadata *metadata);
+int replyWithMetadata(redisClient *c, robj *metadataObj);
 double getScore(robj *zset, robj *item);
 robj *getResourceValue(redisClient *c, robj *item, robj *field);
 robj *getHashValue(redisClient *c, robj *item, robj *field);
