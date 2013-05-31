@@ -22,6 +22,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data);
 void vfindByFilters(redisClient *c, vfindData *data);
 
 static void initializeZsetIterator(vfindData *data);
+static char* metaDataForReplyItem(int blocked);
 
 int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys, int flags) {
   int i, num, *keys;
@@ -242,12 +243,21 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
 
   while(ln != NULL) {
     item = ln->obj;
+    int blocked = 0;
     for(int i = 0; i < filter_count; ++i) {
       if (!isMember(filters[i], item)) { goto next; }
     }
-    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { goto next; }
+    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { 
+      if (data->include_blocked == 1) { blocked = 1; }
+      else { goto next; } 
+    }
     if (found++ >= offset && added < count) {
-      if (replyWithDetail(c, item, detail_field)) { added++; }
+      if (replyWithDetail(c, item, detail_field)) { 
+        added++; 
+        char *metaData = metaDataForReplyItem(blocked);
+        // addReplySds(c, sdsnewlen(metaData, strlen(metaData)));
+        printf("%s", metaData);
+      }
       else { --found; }
     }
     if (added == count && found >= up_to) { break; }
@@ -262,4 +272,9 @@ static void initializeZsetIterator(vfindData *data) {
   zskiplist *zsl;
   zsl = data->zset->zsl;
   data->ln = data->desc ? zsl->tail : zsl->header->level[0].forward;
+}
+
+static char* metaDataForReplyItem(int blocked) {
+  if (blocked) return "BLOCKED";
+  else return "NON-BLOCKED"; 
 }
