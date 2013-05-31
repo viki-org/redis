@@ -2,6 +2,13 @@
 #include "viki.h"
 #include <stdio.h>
 
+int replyWithMetadata(redisClient *c, vikiResultMetadata *metadata) {
+  robj *metadataObj = generateMetadataObject(metadata);
+  addReplyBulk(c, metadataObj);
+  decrRefCount(metadataObj);
+  return 1;
+}
+
 int replyWithDetail(redisClient *c, robj *item, robj *field) {
   robj *value = getResourceValue(c, item, field);
   if (value == NULL) {
@@ -79,4 +86,13 @@ double getScore(robj *zsetObj, robj *item) {
   zset *zs = zsetObj->ptr;
   dictEntry *de = dictFind(zs->dict, item);
   return de == NULL ? -1 : *(double*)dictGetVal(de);
+}
+
+// Need to be generic
+robj *generateMetadataObject(vikiResultMetadata *metadata) {
+  if (metadata->blocked == 1) {
+    return createStringObject("BLOCKED", strlen("BLOCKED"));
+  } else {
+    return createStringObject("NON-BLOCKED", strlen("NON-BLOCKED"));
+  }
 }
