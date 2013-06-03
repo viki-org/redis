@@ -91,13 +91,13 @@ start_server {tags {"vfind"}} {
     test "vfind filter and holdback descending - $encoding" {
       setup_data
       r sadd cap a c f z y mnm
-      assert_equal {s_d {{"BLOCKED": 0}} s_v {{"BLOCKED": 0}} s_g {{"BLOCKED": 0}} 3} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
+      assert_equal {s_d {{"BLOCKED":0}} s_v {{"BLOCKED":0}} s_g {{"BLOCKED":0}} 3} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
     }
 
     test "vfind filter holdback ascending $encoding" {
       setup_data
       r sadd cap a c f z y
-      assert_equal {good_stuff {{"BLOCKED": 0}} s_g {{"BLOCKED": 0}} s_v {{"BLOCKED": 0}} s_d {{"BLOCKED": 0}} 4} [r vfind zset cap 0 0 10 11 asc incl excl no details 1 filter1]
+      assert_equal {good_stuff {{"BLOCKED":0}} s_g {{"BLOCKED":0}} s_v {{"BLOCKED":0}} s_d {{"BLOCKED":0}} 4} [r vfind zset cap 0 0 10 11 asc incl excl no details 1 filter1]
     }
 
     test "vfind filter all with a non existing filter - $encoding" {
@@ -115,7 +115,7 @@ start_server {tags {"vfind"}} {
 
     test "vfind no holdbacks - $encoding" {
       setup_data
-      assert_equal {s_d {{"BLOCKED": 0}} s_v {{"BLOCKED": 0}} s_g {{"BLOCKED": 0}} s_f {{"BLOCKED": 0}} s_c {{"BLOCKED": 0}} good_stuff {{"BLOCKED": 0}} 6} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
+      assert_equal {s_d {{"BLOCKED":0}} s_v {{"BLOCKED":0}} s_g {{"BLOCKED":0}} s_f {{"BLOCKED":0}} s_c {{"BLOCKED":0}} good_stuff {{"BLOCKED":0}} 6} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
     }
 
     test "vfind holdback all - $encoding" {
@@ -128,59 +128,59 @@ start_server {tags {"vfind"}} {
       setup_data
       r sadd filter2 d g u y x o p
       r sadd cap d v
-      assert_equal {s_g {{"BLOCKED": 0}} 1} [r vfind zset cap 0 0 10 11 desc incl excl no details 2 filter1 filter2]
+      assert_equal {s_g {{"BLOCKED":0}} 1} [r vfind zset cap 0 0 10 11 desc incl excl no details 2 filter1 filter2]
     }
 
     test "vfind mulitple filters 2 - $encoding" {
       setup_data
       r sadd filter2 d g u
       r sadd cap u a j
-      assert_equal {s_d {{"BLOCKED": 0}} s_g {{"BLOCKED": 0}} 2} [r vfind zset cap 0 0 10 11 desc incl excl no details 2 filter1 filter2]
+      assert_equal {s_d {{"BLOCKED":0}} s_g {{"BLOCKED":0}} 2} [r vfind zset cap 0 0 10 11 desc incl excl no details 2 filter1 filter2]
     }
 
     test "vfind mulitple filters 3 - $encoding" {
       setup_data
       r sadd filter2 d v g
       r sadd cap d
-      assert_equal {s_g {{"BLOCKED": 0}} s_v {{"BLOCKED": 0}} 2} [r vfind zset cap 0 0 10 11 asc incl excl no details 2 filter1 filter2]
+      assert_equal {s_g {{"BLOCKED":0}} s_v {{"BLOCKED":0}} 2} [r vfind zset cap 0 0 10 11 asc incl excl no details 2 filter1 filter2]
     }
 
     test "vfind mulitple filters 4 - $encoding" {
       setup_data
       r sadd filter2 d v g
       r sadd cap d
-      assert_equal {s_v {{"BLOCKED": 0}} s_g {{"BLOCKED": 0}} 2} [r vfind zset cap 0 0 10 11 desc incl excl no details 2 filter1 filter2]
+      assert_equal {s_v {{"BLOCKED":0}} s_g {{"BLOCKED":0}} 2} [r vfind zset cap 0 0 10 11 desc incl excl no details 2 filter1 filter2]
     }
 
     test "vfind paging offset - $encoding" {
       setup_data
       r sadd cap v x
-      assert_equal {s_f {{"BLOCKED": 0}} s_c {{"BLOCKED": 0}} 5} [r vfind zset cap 0 2 2 10 desc incl excl no details 1 filter1]
+      assert_equal {s_f {{"BLOCKED":0}} s_c {{"BLOCKED":0}} 5} [r vfind zset cap 0 2 2 10 desc incl excl no details 1 filter1]
     }
 
     test "vfind paging offset 2 - $encoding" {
       setup_data
       r sadd cap v x
-      assert_equal {s_g {{"BLOCKED": 0}} s_f {{"BLOCKED": 0}} 5} [r vfind zset cap 0 1 2 10 desc incl excl no details 1 filter1]
+      assert_equal {s_g {{"BLOCKED":0}} s_f {{"BLOCKED":0}} 5} [r vfind zset cap 0 1 2 10 desc incl excl no details 1 filter1]
     }
 
     test "vfind paging offset ascending - $encoding" {
       setup_data
       r sadd cap v x
-      assert_equal {s_a {{"BLOCKED": 0}} s_c {{"BLOCKED": 0}} 7} [r vfind zset cap 0 1 2 10 asc incl excl no details 0]
+      assert_equal {s_a {{"BLOCKED":0}} s_c {{"BLOCKED":0}} 7} [r vfind zset cap 0 1 2 10 asc incl excl no details 0]
     }
 
     test "vfind anti cap - $encoding" {
       setup_data
       r sadd cap c f g
       r sadd anti c g
-      assert_equal {good_stuff {{"BLOCKED": 0}} s_c {{"BLOCKED": 0}} s_g {{"BLOCKED": 0}} s_v {{"BLOCKED": 0}} s_d {{"BLOCKED": 0}} 5} [r vfind zset cap anti 0 10 10 asc incl excl no details 1 filter1]
+      assert_equal {good_stuff {{"BLOCKED":0}} s_c {{"BLOCKED":0}} s_g {{"BLOCKED":0}} s_v {{"BLOCKED":0}} s_d {{"BLOCKED":0}} 5} [r vfind zset cap anti 0 10 10 asc incl excl no details 1 filter1]
     }
 
     test "vfind upto limit - $encoding" {
       setup_data
       r sadd cap v x
-      assert_equal {s_f {{"BLOCKED": 0}} s_e {{"BLOCKED": 0}} 4} [r vfind zset cap anti 2 2 3 desc incl excl no details 0]
+      assert_equal {s_f {{"BLOCKED":0}} s_e {{"BLOCKED":0}} 4} [r vfind zset cap anti 2 2 3 desc incl excl no details 0]
     }
 
     test "bricks 1 - $encoding" {
@@ -189,7 +189,7 @@ start_server {tags {"vfind"}} {
       r hmset r:1b details "{\"name\":\"1b_details\"}" resource_id 3v
       r hmset r:3v details "{\"name\":\"3v_details\"}"
       r sadd cap a v c 3v
-      assert_equal {{{"name":"1b_details", "resource": {"name":"3v_details"}}} {{"BLOCKED": 0}} 1} [r vfind a_zset cap 0 0 10 10 desc incl excl no details 0]
+      assert_equal {{{"name":"1b_details", "resource": {"name":"3v_details"}}} {{"BLOCKED":0}} 1} [r vfind a_zset cap 0 0 10 10 desc incl excl no details 0]
     }
 
     test "bricks 2 - $encoding" {
@@ -198,7 +198,7 @@ start_server {tags {"vfind"}} {
       r hmset r:1b details "{\"name\":\"1b_details\"}"
       r hmset r:3v details "{\"name\":\"3v_details\"}"
       r sadd cap a v c 3v
-      assert_equal {{{"name":"1b_details"}} {{"BLOCKED": 0}} 1} [r vfind a_zset cap 0 0 10 10 desc incl excl no details 0]
+      assert_equal {{{"name":"1b_details"}} {{"BLOCKED":0}} 1} [r vfind a_zset cap 0 0 10 10 desc incl excl no details 0]
     }
 
     test "bricks 3 - $encoding" {
@@ -206,7 +206,7 @@ start_server {tags {"vfind"}} {
       r zadd a_zset 1 1b 10 3v
       r hmset r:1b details "{\"name\":\"1b_details\"}" resource_id 3v
       r sadd cap a v c 3v
-      assert_equal {{{"name":"1b_details"}} {{"BLOCKED": 0}} 1} [r vfind a_zset cap 0 0 10 10 desc incl excl no details 0]
+      assert_equal {{{"name":"1b_details"}} {{"BLOCKED":0}} 1} [r vfind a_zset cap 0 0 10 10 desc incl excl no details 0]
     }
 
     test "vfind get specific field - $encoding" {
@@ -217,34 +217,34 @@ start_server {tags {"vfind"}} {
       r hset r:e en se_en
       r hset r:f en sf_en
       r hset r:g en sg_en
-      assert_equal {sd_en {{"BLOCKED": 0}} sg_en {{"BLOCKED": 0}} sf_en {{"BLOCKED": 0}} sc_en {{"BLOCKED": 0}} 4} [r vfind zset cap 0 0 10 10 desc incl excl no en 1 filter1]
+      assert_equal {sd_en {{"BLOCKED":0}} sg_en {{"BLOCKED":0}} sf_en {{"BLOCKED":0}} sc_en {{"BLOCKED":0}} 4} [r vfind zset cap 0 0 10 10 desc incl excl no en 1 filter1]
     }
 
     test "vfind applies inclusion list - $encoding" {
       setup_data
       r sadd cap a c f z y mnm
       r zadd incl 0 f 1 c
-      assert_equal {s_d {{"BLOCKED": 0}} s_v {{"BLOCKED": 0}} s_g {{"BLOCKED": 0}} s_f {{"BLOCKED": 0}} s_c {{"BLOCKED": 0}} 5} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
+      assert_equal {s_d {{"BLOCKED":0}} s_v {{"BLOCKED":0}} s_g {{"BLOCKED":0}} s_f {{"BLOCKED":0}} s_c {{"BLOCKED":0}} 5} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
     }
 
     test "vfind applies exclusion list - $encoding" {
       setup_data
       r sadd cap a c f z y mnm
       r sadd excl v d
-      assert_equal {s_g {{"BLOCKED": 0}} 1} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
+      assert_equal {s_g {{"BLOCKED":0}} 1} [r vfind zset cap 0 0 10 11 desc incl excl no details 1 filter1]
     }
 
     test "vfind applies include BLOCKED list using vfindZWithFilters - $encoding" {
       setup_data
       r sadd cap v x
-      assert_equal {s_v {{"BLOCKED": 1}} s_g {{"BLOCKED": 0}} 6} [r vfind zset cap 0 1 2 10 desc incl excl yes details 1 filter1]
+      assert_equal {s_v {{"BLOCKED":1}} s_g {{"BLOCKED":0}} 6} [r vfind zset cap 0 1 2 10 desc incl excl yes details 1 filter1]
     }
 
     test "vfind applies include BLOCKED list using vfindWithFilters - $encoding" {
       setup_data
       r sadd filter2 d v g
       r sadd cap d
-      assert_equal {s_g {{"BLOCKED": 0}} s_v {{"BLOCKED": 0}} s_d {{"BLOCKED": 1}} 3} [r vfind zset cap 0 0 10 11 asc incl excl yes details 2 filter1 filter2]
+      assert_equal {s_g {{"BLOCKED":0}} s_v {{"BLOCKED":0}} s_d {{"BLOCKED":1}} 3} [r vfind zset cap 0 0 10 11 asc incl excl yes details 2 filter1 filter2]
     }
   }
   basics ziplist

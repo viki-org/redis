@@ -92,9 +92,9 @@ robj *generateMetadataObject(vikiResultMetadata *metadata) {
   char p[20];
   strcat(p, "{");
   if (metadata->blocked == 1) {
-    strcat(p,"\"BLOCKED\": 1");
+    strcat(p,"\"BLOCKED\":1");
   } else {
-    strcat(p,"\"BLOCKED\": 0");
+    strcat(p,"\"BLOCKED\":0");
   }
   strcat(p, "}");
   return createStringObject(p, strlen(p));
