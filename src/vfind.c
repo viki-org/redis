@@ -177,28 +177,53 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   dict *blockedDict;
   blockedDict = dictCreate(&hashDictType, NULL);
 
-  while((setTypeNext(si, &item, &intobj)) != -1) {
-    for(int i = 1; i < filter_count; ++i) {
-      if (!isMember(filters[i], item)) { goto next; }
-    }
-    int blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
-    if (blocked && (data->include_blocked == 0)) { goto next; }
-    dictEntry *de;
-    if ((de = dictFind(zset->dict, item)) != NULL) {
-      score = *(double*)dictGetVal(de);
-      zslInsert(zsl, score, item);
-      incrRefCount(item);
-      dictAdd(dstzset->dict, item, &score);
-      incrRefCount(item);
-      ++found;
+  if (data->include_blocked == 1) {
+    while((setTypeNext(si, &item, &intobj)) != -1) {
+      for(int i = 1; i < filter_count; ++i) {
+        if (!isMember(filters[i], item)) { goto next1; }
+      }
+      int blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+      dictEntry *de;
+      if ((de = dictFind(zset->dict, item)) != NULL) {
+        score = *(double*)dictGetVal(de);
+        zslInsert(zsl, score, item);
+        incrRefCount(item);
+        dictAdd(dstzset->dict, item, &score);
+        incrRefCount(item);
+        ++found;
 
-      vikiResultMetadata *metadata;
-      metadata = zmalloc(sizeof(*metadata));
-      metadata->blocked = blocked;
-      dictAdd(blockedDict, item, metadata);
+        vikiResultMetadata *metadata;
+        metadata = zmalloc(sizeof(*metadata));
+        metadata->blocked = blocked;
+        dictAdd(blockedDict, item, metadata);
+      }
+      next1:
+      item = NULL;
     }
-    next:
-    item = NULL;
+  } else {
+    while((setTypeNext(si, &item, &intobj)) != -1) {
+      for(int i = 1; i < filter_count; ++i) {
+        if (!isMember(filters[i], item)) { goto next2; }
+      }
+      int blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+      if (blocked) { goto next2; }
+      dictEntry *de;
+      if ((de = dictFind(zset->dict, item)) != NULL) {
+        score = *(double*)dictGetVal(de);
+        zslInsert(zsl, score, item);
+        incrRefCount(item);
+        dictAdd(dstzset->dict, item, &score);
+        incrRefCount(item);
+        ++found;
+
+        vikiResultMetadata *metadata;
+        metadata = zmalloc(sizeof(*metadata));
+        metadata->blocked = blocked;
+        dictAdd(blockedDict, item, metadata);
+      }
+      next2:
+      item = NULL;
+    } 
   }
 
   dictReleaseIterator(si->di);
@@ -266,34 +291,60 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   dict *exclusion_list = data->exclusion_list;
   zskiplistNode *ln = data->ln;
   robj *item;
+
+  // The common metadata used for all items
   vikiResultMetadata *metadata;
   metadata = zmalloc(sizeof(*metadata));
 
-  while(ln != NULL) {
-    item = ln->obj;
+  if (data->include_blocked == 1) {
+    while(ln != NULL) {
+      item = ln->obj;
 
-    // Init metadata information
-    metadata->blocked = 0;
-
-    for(int i = 0; i < filter_count; ++i) {
-      if (!isMember(filters[i], item)) { goto next; }
-    }
-    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { 
-      if (data->include_blocked == 1) { metadata->blocked = 1; }
-      else { goto next; } 
-    }
-    if (found++ >= offset && added < count) {
-      if (replyWithDetail(c, item, detail_field)) { 
-        added++; 
-        replyWithMetadata(c, generateMetadataObject(metadata));
+      for(int i = 0; i < filter_count; ++i) {
+        if (!isMember(filters[i], item)) { goto next1; }
       }
-      else { --found; }
-    }
+      if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { 
+        metadata->blocked = 1; 
+      } else {
+        metadata->blocked = 0;
+      }
+      if (found++ >= offset && added < count) {
+        if (replyWithDetail(c, item, detail_field)) { 
+          added++; 
+          replyWithMetadata(c, generateMetadataObject(metadata));
+        }
+        else { --found; }
+      }
 
-    if (added == count && found >= up_to) { break; }
-    next:
-    ln = desc ? ln->backward : ln->level[0].forward;
+      if (added == count && found >= up_to) { break; }
+      next1:
+      ln = desc ? ln->backward : ln->level[0].forward;
+    }
+  } else {
+    metadata->blocked = 0;
+    while(ln != NULL) {
+      item = ln->obj;
+
+      for(int i = 0; i < filter_count; ++i) {
+        if (!isMember(filters[i], item)) { goto next2; }
+      }
+      if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { 
+        goto next2;
+      }
+      if (found++ >= offset && added < count) {
+        if (replyWithDetail(c, item, detail_field)) { 
+          added++; 
+          replyWithMetadata(c, generateMetadataObject(metadata));
+        }
+        else { --found; }
+      }
+
+      if (added == count && found >= up_to) { break; }
+      next2:
+      ln = desc ? ln->backward : ln->level[0].forward;
+    }
   }
+
 
   zfree(metadata);
   data->found = found;
