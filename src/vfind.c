@@ -174,11 +174,15 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   si->encoding = si->subject->encoding;
   si->di = dictGetIterator(filters[0]);
 
+  dict *blockedDict;
+  blockedDict = dictCreate(&hashDictType, NULL);
+
   while((setTypeNext(si, &item, &intobj)) != -1) {
     for(int i = 1; i < filter_count; ++i) {
       if (!isMember(filters[i], item)) { goto next; }
     }
-    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item) && (data->include_blocked == 0)) { goto next; }
+    int blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+    if (blocked && (data->include_blocked == 0)) { goto next; }
     dictEntry *de;
     if ((de = dictFind(zset->dict, item)) != NULL) {
       score = *(double*)dictGetVal(de);
@@ -187,6 +191,11 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       dictAdd(dstzset->dict, item, &score);
       incrRefCount(item);
       ++found;
+
+      vikiResultMetadata *metadata;
+      metadata = zmalloc(sizeof(*metadata));
+      metadata->blocked = blocked;
+      dictAdd(blockedDict, item, metadata);
     }
     next:
     item = NULL;
@@ -195,38 +204,26 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   dictReleaseIterator(si->di);
   zfree(si);
 
-  vikiResultMetadata *metadata;
-  metadata = zmalloc(sizeof(*metadata));
-
   if (found > offset) {
     if (desc) {
       ln = offset == 0 ? zsl->tail : zslGetElementByRank(zsl, found - offset);
 
       while (added < found && added < count && ln != NULL) {
-        metadata->blocked = 0;
-        if (heldback(cap, anti_cap, inclusion_list, exclusion_list, ln->obj)) {
-          metadata->blocked = 1;
-        }
-
         if (replyWithDetail(c, ln->obj, detail_field)) { 
-          added++; 
+          added++;
+          vikiResultMetadata *metadata = (vikiResultMetadata *)dictFetchValue(blockedDict, ln->obj);
           replyWithMetadata(c, generateMetadataObject(metadata));
-        }
-        else { --found; }
+        } else { --found; }
         ln = ln->backward;
       }
     }
     else {
       ln = offset == 0 ? zsl->header->level[0].forward : zslGetElementByRank(zsl, offset+1);
 
-      while (added < found && added < count && ln != NULL) {
-        metadata->blocked = 0;
-        if (heldback(cap, anti_cap, inclusion_list, exclusion_list, ln->obj)) {
-          metadata->blocked = 1;
-        }
-        
+      while (added < found && added < count && ln != NULL) {    
         if (replyWithDetail(c, ln->obj, detail_field)) { 
-          added++; 
+          added++;
+          vikiResultMetadata *metadata = (vikiResultMetadata *)dictFetchValue(blockedDict, ln->obj);
           replyWithMetadata(c, generateMetadataObject(metadata));
         }
         else { --found; }
@@ -235,7 +232,17 @@ void vfindByFilters(redisClient *c, vfindData *data) {
     }
   }
 
-  zfree(metadata);
+  // Release the dict
+  dictIterator *di = dictGetSafeIterator(blockedDict);
+  dictEntry *de;
+  while ((de = dictNext(di)) != NULL) {
+    vikiResultMetadata *metadata = (vikiResultMetadata *)dictGetVal(de);
+    zfree(metadata);
+    dictDeleteNoFree(blockedDict, de->key);
+  }
+  dictReleaseIterator(di);
+  dictRelease(blockedDict);
+
   decrRefCount(dstobj);
   data->found = found;
   data->added = added;

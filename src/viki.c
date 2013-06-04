@@ -89,7 +89,7 @@ double getScore(robj *zsetObj, robj *item) {
 
 // Need to be generic
 robj *generateMetadataObject(vikiResultMetadata *metadata) {
-  char p[20];
+  char p[20] = "";
   strcat(p, "{");
   if (metadata->blocked == 1) {
     strcat(p,"\"BLOCKED\":1");
