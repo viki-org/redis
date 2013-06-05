@@ -1,5 +1,5 @@
 typedef struct vikiResultMetadata {
-  int blocked;
+  bool blocked;
 } vikiResultMetadata;
 
 int qsortCompareSetsByCardinality(const void *s1, const void *s2);

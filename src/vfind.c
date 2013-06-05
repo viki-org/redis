@@ -164,6 +164,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   robj *detail_field = data->detail_field;
   int64_t intobj;
   double score;
+  vikiResultMetadata *metadata;
 
   robj *dstobj = createZsetObject();
   dstzset = dstobj->ptr;
@@ -192,7 +193,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
         incrRefCount(item);
         ++found;
 
-        vikiResultMetadata *metadata;
         metadata = zmalloc(sizeof(*metadata));
         metadata->blocked = blocked;
         dictAdd(blockedDict, item, metadata);
@@ -216,7 +216,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
         incrRefCount(item);
         ++found;
 
-        vikiResultMetadata *metadata;
         metadata = zmalloc(sizeof(*metadata));
         metadata->blocked = blocked;
         dictAdd(blockedDict, item, metadata);
@@ -236,8 +235,9 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       while (added < found && added < count && ln != NULL) {
         if (replyWithDetail(c, ln->obj, detail_field)) { 
           added++;
-          vikiResultMetadata *metadata = (vikiResultMetadata *)dictFetchValue(blockedDict, ln->obj);
+          metadata = (vikiResultMetadata *)dictFetchValue(blockedDict, ln->obj);
           replyWithMetadata(c, generateMetadataObject(metadata));
+          // replyWithMetadata(c, createStringObject("B", strlen("B")));
         } else { --found; }
         ln = ln->backward;
       }
@@ -248,8 +248,9 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       while (added < found && added < count && ln != NULL) {    
         if (replyWithDetail(c, ln->obj, detail_field)) { 
           added++;
-          vikiResultMetadata *metadata = (vikiResultMetadata *)dictFetchValue(blockedDict, ln->obj);
+          metadata = (vikiResultMetadata *)dictFetchValue(blockedDict, ln->obj);
           replyWithMetadata(c, generateMetadataObject(metadata));
+          // replyWithMetadata(c, createStringObject("B", strlen("B")));
         }
         else { --found; }
         ln = ln->level[0].forward;
