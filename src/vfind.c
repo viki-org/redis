@@ -164,7 +164,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   robj *detail_field = data->detail_field;
   int64_t intobj;
   double score;
-  vikiResultMetadata *metadata;
+  vikiResultMetadata *metadata = zmalloc(sizeof(*metadata));
 
   robj *dstobj = createZsetObject();
   dstzset = dstobj->ptr;
@@ -175,15 +175,13 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   si->encoding = si->subject->encoding;
   si->di = dictGetIterator(filters[0]);
 
-  dict *blockedDict;
-  blockedDict = dictCreate(&hashDictType, NULL);
-
   if (data->include_blocked == 1) {
     while((setTypeNext(si, &item, &intobj)) != -1) {
       for(int i = 1; i < filter_count; ++i) {
         if (!isMember(filters[i], item)) { goto next1; }
       }
       int blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+      item->blocked = blocked;
       dictEntry *de;
       if ((de = dictFind(zset->dict, item)) != NULL) {
         score = *(double*)dictGetVal(de);
@@ -192,10 +190,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
         dictAdd(dstzset->dict, item, &score);
         incrRefCount(item);
         ++found;
-
-        metadata = zmalloc(sizeof(*metadata));
-        metadata->blocked = blocked;
-        dictAdd(blockedDict, item, metadata);
       }
       next1:
       item = NULL;
@@ -206,6 +200,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
         if (!isMember(filters[i], item)) { goto next2; }
       }
       int blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+      item->blocked = blocked;
       if (blocked) { goto next2; }
       dictEntry *de;
       if ((de = dictFind(zset->dict, item)) != NULL) {
@@ -215,10 +210,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
         dictAdd(dstzset->dict, item, &score);
         incrRefCount(item);
         ++found;
-
-        metadata = zmalloc(sizeof(*metadata));
-        metadata->blocked = blocked;
-        dictAdd(blockedDict, item, metadata);
       }
       next2:
       item = NULL;
@@ -235,9 +226,8 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       while (added < found && added < count && ln != NULL) {
         if (replyWithDetail(c, ln->obj, detail_field)) { 
           added++;
-          metadata = (vikiResultMetadata *)dictFetchValue(blockedDict, ln->obj);
+          metadata->blocked = ln->obj->blocked;
           replyWithMetadata(c, generateMetadataObject(metadata));
-          // replyWithMetadata(c, createStringObject("B", strlen("B")));
         } else { --found; }
         ln = ln->backward;
       }
@@ -248,9 +238,8 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       while (added < found && added < count && ln != NULL) {    
         if (replyWithDetail(c, ln->obj, detail_field)) { 
           added++;
-          metadata = (vikiResultMetadata *)dictFetchValue(blockedDict, ln->obj);
+          metadata->blocked = ln->obj->blocked;
           replyWithMetadata(c, generateMetadataObject(metadata));
-          // replyWithMetadata(c, createStringObject("B", strlen("B")));
         }
         else { --found; }
         ln = ln->level[0].forward;
@@ -258,17 +247,8 @@ void vfindByFilters(redisClient *c, vfindData *data) {
     }
   }
 
-  // Release the dict
-  dictIterator *di = dictGetSafeIterator(blockedDict);
-  dictEntry *de;
-  while ((de = dictNext(di)) != NULL) {
-    vikiResultMetadata *metadata = (vikiResultMetadata *)dictGetVal(de);
-    zfree(metadata);
-    dictDeleteNoFree(blockedDict, de->key);
-  }
-  dictReleaseIterator(di);
-  dictRelease(blockedDict);
 
+  zfree(metadata);
   decrRefCount(dstobj);
   data->found = found;
   data->added = added;
