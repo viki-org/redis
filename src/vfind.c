@@ -110,7 +110,8 @@ void vfindCommand(redisClient *c) {
   data->exclusion_list = (exclusion_list == NULL) ? NULL : (dict*)exclusion_list->ptr;
 
   if (!strcasecmp(direction->ptr, "asc")) { data->desc = 0; }
-  if (!strcasecmp(include_blocked->ptr, "yes")) { data->include_blocked = 1; }
+  // The keyword for blocked items is "withblocked"
+  if (!strcasecmp(include_blocked->ptr, "withblocked")) { data->include_blocked = 1; }
 
   data->filter_count = filter_count;
   if (filter_count != 0) {
@@ -123,6 +124,8 @@ void vfindCommand(redisClient *c) {
     for (int i = 0; i < filter_count; ++i) {
       data->filters[i] = (dict*)data->filter_objects[i]->ptr;
     }
+
+    // Size of smallest filter
     int size = dictSize(data->filters[0]);
     int ratio = zsetLength(items) / size;
 
