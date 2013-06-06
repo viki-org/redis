@@ -1,7 +1,3 @@
-typedef struct vikiResultMetadata {
-  int blocked;
-} vikiResultMetadata;
-
 int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 unsigned char *zzlFind(unsigned char *zl, robj *ele, double *score);
 int replyWithDetail(redisClient *c, robj *item, robj *detail_field);
@@ -23,4 +19,4 @@ inline int heldback(dict *cap, dict *anti_cap, robj *inclusiveList, dict *exclus
   return (anti_cap == NULL || !isMember(anti_cap, item));
 }
 
-robj *generateMetadataObject(vikiResultMetadata *metadata);
+robj *generateMetadataObject(robj *item);

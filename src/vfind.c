@@ -164,7 +164,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   robj *detail_field = data->detail_field;
   int64_t intobj;
   double score;
-  vikiResultMetadata *metadata = zmalloc(sizeof(*metadata));
 
   robj *dstobj = createZsetObject();
   dstzset = dstobj->ptr;
@@ -180,8 +179,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       for(int i = 1; i < filter_count; ++i) {
         if (!isMember(filters[i], item)) { goto next1; }
       }
-      int blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
-      item->blocked = blocked;
+      item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
       dictEntry *de;
       if ((de = dictFind(zset->dict, item)) != NULL) {
         score = *(double*)dictGetVal(de);
@@ -199,9 +197,8 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       for(int i = 1; i < filter_count; ++i) {
         if (!isMember(filters[i], item)) { goto next2; }
       }
-      int blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
-      item->blocked = blocked;
-      if (blocked) { goto next2; }
+      item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+      if (item->blocked) { goto next2; }
       dictEntry *de;
       if ((de = dictFind(zset->dict, item)) != NULL) {
         score = *(double*)dictGetVal(de);
@@ -226,8 +223,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       while (added < found && added < count && ln != NULL) {
         if (replyWithDetail(c, ln->obj, detail_field)) { 
           added++;
-          metadata->blocked = ln->obj->blocked;
-          replyWithMetadata(c, generateMetadataObject(metadata));
+          replyWithMetadata(c, generateMetadataObject(ln->obj));
         } else { --found; }
         ln = ln->backward;
       }
@@ -238,8 +234,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       while (added < found && added < count && ln != NULL) {    
         if (replyWithDetail(c, ln->obj, detail_field)) { 
           added++;
-          metadata->blocked = ln->obj->blocked;
-          replyWithMetadata(c, generateMetadataObject(metadata));
+          replyWithMetadata(c, generateMetadataObject(ln->obj));
         }
         else { --found; }
         ln = ln->level[0].forward;
@@ -247,8 +242,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
     }
   }
 
-
-  zfree(metadata);
   decrRefCount(dstobj);
   data->found = found;
   data->added = added;
@@ -273,10 +266,6 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   zskiplistNode *ln = data->ln;
   robj *item;
 
-  // The common metadata used for all items
-  vikiResultMetadata *metadata;
-  metadata = zmalloc(sizeof(*metadata));
-
   if (data->include_blocked == 1) {
     while(ln != NULL) {
       item = ln->obj;
@@ -284,15 +273,11 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
       for(int i = 0; i < filter_count; ++i) {
         if (!isMember(filters[i], item)) { goto next1; }
       }
-      if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { 
-        metadata->blocked = 1; 
-      } else {
-        metadata->blocked = 0;
-      }
+      item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item); 
       if (found++ >= offset && added < count) {
         if (replyWithDetail(c, item, detail_field)) { 
           added++; 
-          replyWithMetadata(c, generateMetadataObject(metadata));
+          replyWithMetadata(c, generateMetadataObject(item));
         }
         else { --found; }
       }
@@ -302,20 +287,20 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
       ln = desc ? ln->backward : ln->level[0].forward;
     }
   } else {
-    metadata->blocked = 0;
     while(ln != NULL) {
       item = ln->obj;
 
       for(int i = 0; i < filter_count; ++i) {
         if (!isMember(filters[i], item)) { goto next2; }
       }
-      if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { 
+      item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+      if (item->blocked) { 
         goto next2;
       }
       if (found++ >= offset && added < count) {
         if (replyWithDetail(c, item, detail_field)) { 
           added++; 
-          replyWithMetadata(c, generateMetadataObject(metadata));
+          replyWithMetadata(c, generateMetadataObject(item));
         }
         else { --found; }
       }
@@ -326,8 +311,6 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
     }
   }
 
-
-  zfree(metadata);
   data->found = found;
   data->added = added;
 }

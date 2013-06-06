@@ -320,6 +320,8 @@ typedef struct redisObject {
     unsigned lru:22;        /* lru time (relative to server.lruclock) */
     int refcount;
     void *ptr;
+
+    // metadata
     int blocked;
 } robj;
 
