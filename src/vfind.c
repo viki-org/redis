@@ -57,7 +57,7 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
 
 // Prepares all the sets(data, cap, anticap, filters) and calls vfindByFilters or vfindByZWithFilters
 // depending on the ratio of the input set and the smallest filter set
-// Syntax: vfind zset cap anticap offset count upto direction incl excl detail_field filter_count [filter keys]
+// Syntax: vfind zset cap anticap offset count upto direction incl excl include_blocked detail_field filter_count [filter keys]
 void vfindCommand(redisClient *c) {
   long filter_count;
   void *replylen;
@@ -177,43 +177,25 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   si->encoding = si->subject->encoding;
   si->di = dictGetIterator(filters[0]);
 
-  if (data->include_blocked == 1) {
-    while((setTypeNext(si, &item, &intobj)) != -1) {
-      for(int i = 1; i < filter_count; ++i) {
-        if (!isMember(filters[i], item)) { goto next1; }
-      }
-      item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
-      dictEntry *de;
-      if ((de = dictFind(zset->dict, item)) != NULL) {
-        score = *(double*)dictGetVal(de);
-        zslInsert(zsl, score, item);
-        incrRefCount(item);
-        dictAdd(dstzset->dict, item, &score);
-        incrRefCount(item);
-        ++found;
-      }
-      next1:
-      item = NULL;
+  while((setTypeNext(si, &item, &intobj)) != -1) {
+    for(int i = 1; i < filter_count; ++i) {
+      if (!isMember(filters[i], item)) { goto next; }
     }
-  } else {
-    while((setTypeNext(si, &item, &intobj)) != -1) {
-      for(int i = 1; i < filter_count; ++i) {
-        if (!isMember(filters[i], item)) { goto next2; }
-      }
-      item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
-      if (item->blocked) { goto next2; }
-      dictEntry *de;
-      if ((de = dictFind(zset->dict, item)) != NULL) {
-        score = *(double*)dictGetVal(de);
-        zslInsert(zsl, score, item);
-        incrRefCount(item);
-        dictAdd(dstzset->dict, item, &score);
-        incrRefCount(item);
-        ++found;
-      }
-      next2:
-      item = NULL;
-    } 
+    
+    item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+    if (item->blocked && !data->include_blocked) { goto next; }
+    
+    dictEntry *de;
+    if ((de = dictFind(zset->dict, item)) != NULL) {
+      score = *(double*)dictGetVal(de);
+      zslInsert(zsl, score, item);
+      incrRefCount(item);
+      dictAdd(dstzset->dict, item, &score);
+      incrRefCount(item);
+      ++found;
+    }
+    next:
+    item = NULL;
   }
 
   dictReleaseIterator(si->di);
@@ -269,49 +251,27 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   zskiplistNode *ln = data->ln;
   robj *item;
 
-  if (data->include_blocked == 1) {
-    while(ln != NULL) {
-      item = ln->obj;
+  while(ln != NULL) {
+    item = ln->obj;
 
-      for(int i = 0; i < filter_count; ++i) {
-        if (!isMember(filters[i], item)) { goto next1; }
-      }
-      item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item); 
-      if (found++ >= offset && added < count) {
-        if (replyWithDetail(c, item, detail_field)) { 
-          added++; 
-          replyWithMetadata(c, generateMetadataObject(item));
-        }
-        else { --found; }
-      }
-
-      if (added == count && found >= up_to) { break; }
-      next1:
-      ln = desc ? ln->backward : ln->level[0].forward;
+    for(int i = 0; i < filter_count; ++i) {
+      if (!isMember(filters[i], item)) { goto next; }
     }
-  } else {
-    while(ln != NULL) {
-      item = ln->obj;
+    item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
 
-      for(int i = 0; i < filter_count; ++i) {
-        if (!isMember(filters[i], item)) { goto next2; }
-      }
-      item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
-      if (item->blocked) { 
-        goto next2;
-      }
-      if (found++ >= offset && added < count) {
-        if (replyWithDetail(c, item, detail_field)) { 
-          added++; 
-          replyWithMetadata(c, generateMetadataObject(item));
-        }
-        else { --found; }
-      }
+    if (item->blocked && !data->include_blocked) {  goto next; }
 
-      if (added == count && found >= up_to) { break; }
-      next2:
-      ln = desc ? ln->backward : ln->level[0].forward;
+    if (found++ >= offset && added < count) {
+      if (replyWithDetail(c, item, detail_field)) { 
+        added++; 
+        replyWithMetadata(c, generateMetadataObject(item));
+      }
+      else { --found; }
     }
+
+    if (added == count && found >= up_to) { break; }
+    next:
+    ln = desc ? ln->backward : ln->level[0].forward;
   }
 
   data->found = found;
