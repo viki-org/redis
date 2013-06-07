@@ -5,8 +5,8 @@
 typedef struct vsortData {
   int added;
   long count;
-  dict *cap, *anti_cap, *exclusion_list;
-  robj *meta_field, *zscores, *inclusion_list;
+  dict *cap, *anti_cap;
+  robj *meta_field, *zscores, *inclusion_list, *exclusion_list;
 } vsortData;
 
 typedef struct {
@@ -21,6 +21,7 @@ double getScore(robj *zsetObj, robj *item);
 int itemScoreComparitor (const void* lhs, const void* rhs);
 
 void vsortCommand(redisClient *c) {
+  int COLLECTION_TYPES[] = {REDIS_ZSET, REDIS_SET};
   long count;
   void *replylen;
   robj *cap, *anti_cap, *zscores, *inclusion_list, *exclusion_list;
@@ -30,8 +31,8 @@ void vsortCommand(redisClient *c) {
   if ((cap = lookupKey(c->db, c->argv[1])) != NULL && checkType(c, cap, REDIS_SET)) { return; }
   if ((anti_cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
   if ((zscores = lookupKey(c->db, c->argv[4])) != NULL && checkType(c, zscores, REDIS_ZSET)) { return; }
-  if ((inclusion_list = lookupKey(c->db, c->argv[5])) != NULL && checkType(c, inclusion_list, REDIS_ZSET)) { return; }
-  if ((exclusion_list = lookupKey(c->db, c->argv[6])) != NULL && checkType(c, exclusion_list, REDIS_SET)) { return; }
+  if ((inclusion_list = lookupKey(c->db, c->argv[5])) != NULL && checkTypes(c, inclusion_list, COLLECTION_TYPES)) { return; }
+  if ((exclusion_list = lookupKey(c->db, c->argv[6])) != NULL && checkTypes(c, exclusion_list, COLLECTION_TYPES)) { return; }
 
   data = zmalloc(sizeof(*data));
   data->meta_field = createStringObject("meta", 4);
@@ -41,7 +42,7 @@ void vsortCommand(redisClient *c) {
   data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
   data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
   data->inclusion_list = inclusion_list;
-  data->exclusion_list = (exclusion_list == NULL) ? NULL : (dict*)exclusion_list->ptr;;
+  data->exclusion_list = exclusion_list;
 
   replylen = addDeferredMultiBulkLength(c);
   if (count < c->argc - VSORT_ID_START) {
@@ -59,7 +60,7 @@ void vsortByViews(redisClient *c, vsortData *data) {
   dict *anti_cap = data->anti_cap;
   robj *zscores = data->zscores;
   robj *inclusion_list = data->inclusion_list;
-  dict *exclusion_list = data->exclusion_list;
+  robj *exclusion_list = data->exclusion_list;
   long count = data->count;
   int found = 0, lowest_at = 0;
   double lowest = -1;
@@ -115,7 +116,7 @@ void vsortByNone(redisClient *c, vsortData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
   robj *inclusion_list = data->inclusion_list;
-  dict *exclusion_list = data->exclusion_list;
+  robj *exclusion_list = data->exclusion_list;
 
   for(int i = VSORT_ID_START; i < c->argc; ++i) {
     robj *item = c->argv[i];

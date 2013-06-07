@@ -8,9 +8,13 @@ robj *generateKey(robj *item);
 robj *mergeBrickResourceDetails(redisClient *c, robj *brick, robj *key, robj *field);
 inline int isMember(dict *subject, robj *item);
 
-inline int heldback(dict *cap, dict *anti_cap, robj *inclusiveList, dict *exclusiveList, robj *item) {
-  if (inclusiveList != NULL && getScore(inclusiveList, item) != -1) { return 0; }
-  if (exclusiveList != NULL && isMember(exclusiveList, item)) { return 1; }
+int checkTypes(redisClient *c, robj *o, int *types);
+int checkTypeNoReply(robj *o, int type);
+int belongTo(robj *collection, robj *item);
+
+inline int heldback(dict *cap, dict *anti_cap, robj *inclusiveList, robj *exclusiveList, robj *item) {
+  if (inclusiveList != NULL && belongTo(inclusiveList, item)) { return 0; }
+  if (exclusiveList != NULL && belongTo(exclusiveList, item)) { return 1; }
   if (cap == NULL || !isMember(cap, item)) { return 0; }
   return (anti_cap == NULL || !isMember(anti_cap, item));
 }

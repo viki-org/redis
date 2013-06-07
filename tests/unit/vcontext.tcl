@@ -32,13 +32,13 @@ start_server {tags {"vcontext"}} {
     assert_error $err {r vcontext cap anti incl excl 0 1 x:us}
   }
 
-  test "inclusion list is not a zset" {
+  test "inclusion list is not a zset/set" {
     r set incl under
     set err "ERR Operation against a key holding the wrong kind of value"
     assert_error $err {r vcontext cap anti incl excl 0 1 x:us}
   }
 
-  test "exclusion list is not a zset" {
+  test "exclusion list is not a zset/set" {
     r set excl under
     set err "ERR Operation against a key holding the wrong kind of value"
     assert_error $err {r vcontext cap anti incl excl 0 1 x:us}
@@ -97,6 +97,19 @@ start_server {tags {"vcontext"}} {
   test "applies exclusion" {
     setup_data
     r sadd excl b d e i j l o p b d e i j l o p
+    assert_equal {x:us} [r vcontext cap anti incl excl 0 3 x:us x:ca x:mx]
+  }
+
+  test "applies inclusion as SET" {
+    setup_data
+    r sadd cap b d e i j l o p b d e i j l o p
+    r sadd incl e
+    assert_equal {x:us x:ca} [r vcontext cap anti incl excl 0 3 x:us x:ca x:mx]
+  }
+
+  test "applies exclusion as ZSET" {
+    setup_data
+    r zadd excl 0 b 1 d 2 e 3 i 4 j 5 l 6 o 7 p
     assert_equal {x:us} [r vcontext cap anti incl excl 0 3 x:us x:ca x:mx]
   }
 }

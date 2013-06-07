@@ -55,13 +55,13 @@ start_server {tags {"vsort"}} {
       assert_error $err {r vsort cap anti 5 l:-2l:us 0 0 100v}
     }
 
-    test "inclusion list is not a zset - $encoding" {
+    test "inclusion list is not a zset/set - $encoding" {
       r set incl under
       set err "ERR Operation against a key holding the wrong kind of value"
       assert_error $err {r vsort cap anti 5 l:-2l:us incl 0 100v}
     }
 
-    test "exclusion list is not a zset - $encoding" {
+    test "exclusion list is not a zset/set - $encoding" {
       r set excl under
       set err "ERR Operation against a key holding the wrong kind of value"
       assert_error $err {r vsort cap anti 5 l:-2l:us 0 excl 100v}
@@ -100,17 +100,31 @@ start_server {tags {"vsort"}} {
       assert_equal {r600 r300 r100} [r vsort cap anti 3 l:-2l:us 0 0 100c 200c 300v 400c 500v 600v]
     }
 
-    test "applies inclusion list - $encoding" {
+    test "applies inclusion list as ZSET - $encoding" {
       setup_data
       r sadd cap 200c 300v
       r zadd incl 0 200c
       assert_equal {r600 r200 r100 r500} [r vsort cap anti 4 l:-2l:us incl 0 100c 200c 300v 400c 500v 600v]
     }
 
-    test "applies exclusion list - $encoding" {
+    test "applies exclusion list as SET - $encoding" {
       setup_data
       r sadd cap 300v
       r sadd excl 200c
+      assert_equal {r600 r100 r500} [r vsort cap anti 3 l:-2l:us 0 excl 100c 200c 300v 400c 500v 600v]
+    }
+
+    test "applies inclusion list as SET - $encoding" {
+      setup_data
+      r sadd cap 200c 300v
+      r sadd incl 200c
+      assert_equal {r600 r200 r100 r500} [r vsort cap anti 4 l:-2l:us incl 0 100c 200c 300v 400c 500v 600v]
+    }
+
+    test "applies exclusion list as ZSET - $encoding" {
+      setup_data
+      r sadd cap 300v
+      r zadd excl 1 200c
       assert_equal {r600 r100 r500} [r vsort cap anti 3 l:-2l:us 0 excl 100c 200c 300v 400c 500v 600v]
     }
   }

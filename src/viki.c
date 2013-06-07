@@ -80,3 +80,31 @@ double getScore(robj *zsetObj, robj *item) {
   dictEntry *de = dictFind(zs->dict, item);
   return de == NULL ? -1 : *(double*)dictGetVal(de);
 }
+
+int checkTypeNoReply(robj *o, int type) {
+  if (o->type != type) return 1;
+  else return 0;
+}
+
+int checkTypes(redisClient *c, robj *o, int *types) {
+  int i;
+  int n = sizeof(types) / sizeof(int);
+  for (i = 0; i < n; i++) {
+    // if object type is in the array
+    if (!checkTypeNoReply(o, types[i])) return 0;
+  }
+  addReply(c,shared.wrongtypeerr);
+  return 1;
+}
+
+int belongTo(robj *collection, robj *item) {
+  if (collection == NULL) return 0;
+  if (!checkTypeNoReply(collection, REDIS_ZSET)) {
+    // if collection is a ZSET
+    return (getScore(collection, item) != -1);
+  } else if (!checkTypeNoReply(collection, REDIS_SET)) {
+    // if collection is a SET
+    return isMember(collection->ptr, item);
+  } else return 0;
+}
+

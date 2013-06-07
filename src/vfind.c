@@ -9,8 +9,8 @@ typedef struct vfindData {
   long filter_count, offset, count, up_to;
   robj *detail_field;
   robj **filter_objects;
-  robj *inclusion_list;
-  dict *cap, *anti_cap, *exclusion_list, **filters;
+  robj *inclusion_list, *exclusion_list;
+  dict *cap, *anti_cap, **filters;
   zskiplistNode *ln;
   zset *zset;
 } vfindData;
@@ -51,6 +51,7 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
 // Prepares all the sets(data, cap, anticap, filters) and calls vfindByFilters or vfindByZWithFilters
 // depending on the ratio of the input set and the smallest filter set
 void vfindCommand(redisClient *c) {
+  int COLLECTION_TYPES[] = {REDIS_ZSET, REDIS_SET};
   long filter_count;
   void *replylen;
   long offset, count, up_to;
@@ -72,8 +73,8 @@ void vfindCommand(redisClient *c) {
   if ((getLongFromObjectOrReply(c, c->argv[5], &count, NULL) != REDIS_OK)) { return; }
   if ((getLongFromObjectOrReply(c, c->argv[6], &up_to, NULL) != REDIS_OK)) { return; }
   direction = c->argv[7];
-  if ((inclusion_list = lookupKey(c->db, c->argv[8])) != NULL && checkType(c, inclusion_list, REDIS_ZSET)) { return; }
-  if ((exclusion_list = lookupKey(c->db, c->argv[9])) != NULL && checkType(c, exclusion_list, REDIS_SET)) { return; }
+  if ((inclusion_list = lookupKey(c->db, c->argv[8])) != NULL && checkTypes(c, inclusion_list, COLLECTION_TYPES)) { return; }
+  if ((exclusion_list = lookupKey(c->db, c->argv[9])) != NULL && checkTypes(c, exclusion_list, COLLECTION_TYPES)) { return; }
   data_field = c->argv[10];
   if ((getLongFromObjectOrReply(c, c->argv[11], &filter_count, NULL) != REDIS_OK)) { return; }
 
@@ -90,6 +91,7 @@ void vfindCommand(redisClient *c) {
   data->found = 0;
   data->desc = 1;
   data->inclusion_list = inclusion_list;
+  data->exclusion_list = exclusion_list;
 
   replylen = addDeferredMultiBulkLength(c);
 
@@ -97,7 +99,7 @@ void vfindCommand(redisClient *c) {
   data->zset = items->ptr;
   data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
   data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
-  data->exclusion_list = (exclusion_list == NULL) ? NULL : (dict*)exclusion_list->ptr;
+  
 
   if (!strcasecmp(direction->ptr, "asc")) { data->desc = 0; }
 
@@ -148,7 +150,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
   robj *inclusion_list = data->inclusion_list;
-  dict *exclusion_list = data->exclusion_list;
+  robj *exclusion_list = data->exclusion_list;
   robj *detail_field = data->detail_field;
   int64_t intobj;
   double score;
@@ -222,7 +224,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   dict *anti_cap = data->anti_cap;
   robj *detail_field = data->detail_field;
   robj *inclusion_list = data->inclusion_list;
-  dict *exclusion_list = data->exclusion_list;
+  robj *exclusion_list = data->exclusion_list;
   zskiplistNode *ln = data->ln;
   robj *item;
 

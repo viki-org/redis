@@ -55,14 +55,14 @@ start_server {tags {"vfind"}} {
       assert_error $err {r vfind zset cap anti 0 10 1000 desc incl excl details 0}
     }
 
-    test "vfind inclusion is not a zset - $encoding" {
+    test "vfind inclusion is not a zset/set - $encoding" {
       set err "ERR Operation against a key holding the wrong kind of value"
       setup_data
       r set incl noincl
       assert_error $err {r vfind zset cap anti 0 10 1000 desc incl excl details 0}
     }
 
-    test "vfind exclusion is not a zset - $encoding" {
+    test "vfind exclusion is not a zset/set - $encoding" {
       setup_data
       set err "ERR Operation against a key holding the wrong kind of value"
       r set excl noexcl
@@ -219,17 +219,31 @@ start_server {tags {"vfind"}} {
       assert_equal {sd_en sg_en sf_en sc_en 4} [r vfind zset cap 0 0 10 10 desc incl excl en 1 filter1]
     }
 
-    test "vfind applies inclusion list - $encoding" {
+    test "vfind applies inclusion list as ZSET - $encoding" {
       setup_data
       r sadd cap a c f z y mnm
       r zadd incl 0 f 1 c
       assert_equal {s_d s_v s_g s_f s_c 5} [r vfind zset cap 0 0 10 11 desc incl excl details 1 filter1]
     }
 
-    test "vfind applies exclusion list - $encoding" {
+    test "vfind applies exclusion list as SET - $encoding" {
       setup_data
       r sadd cap a c f z y mnm
       r sadd excl v d
+      assert_equal {s_g 1} [r vfind zset cap 0 0 10 11 desc incl excl details 1 filter1]
+    }
+
+    test "vfind applies inclusion list as SET- $encoding" {
+      setup_data
+      r sadd cap a c f z y mnm
+      r sadd incl f c
+      assert_equal {s_d s_v s_g s_f s_c 5} [r vfind zset cap 0 0 10 11 desc incl excl details 1 filter1]
+    }
+
+    test "vfind applies exclusion list as ZSET - $encoding" {
+      setup_data
+      r sadd cap a c f z y mnm
+      r zadd excl 1 v 2 d
       assert_equal {s_g 1} [r vfind zset cap 0 0 10 11 desc incl excl details 1 filter1]
     }
   }

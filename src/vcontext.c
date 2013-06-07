@@ -6,8 +6,8 @@
 typedef struct vcontextData {
   int added;
   robj **filter_objects, **index_objects;
-  robj *inclusion_list;
-  dict *cap, *anti_cap, **filters, *exclusion_list, **indexes;
+  robj *inclusion_list, *exclusion_list;
+  dict *cap, *anti_cap, **filters, **indexes;
 } vcontextData;
 
 void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vcontextData *data);
@@ -39,6 +39,7 @@ int *vcontextGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkey
 }
 
 void vcontextCommand(redisClient *c) {
+  int COLLECTION_TYPES[] = {REDIS_ZSET, REDIS_SET};
   long filter_count, index_count;
   vcontextData *data;
   robj *inclusion_list;
@@ -48,8 +49,8 @@ void vcontextCommand(redisClient *c) {
 
   if ((cap = lookupKey(c->db, c->argv[1])) != NULL && checkType(c, cap, REDIS_SET)) { return; }
   if ((anti_cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
-  if ((inclusion_list = lookupKey(c->db, c->argv[3])) != NULL && checkType(c, inclusion_list, REDIS_ZSET)) { return; }
-  if ((exclusion_list = lookupKey(c->db, c->argv[4])) != NULL && checkType(c, exclusion_list, REDIS_SET)) { return; }
+  if ((inclusion_list = lookupKey(c->db, c->argv[3])) != NULL && checkTypes(c, inclusion_list, COLLECTION_TYPES)) { return; }
+  if ((exclusion_list = lookupKey(c->db, c->argv[4])) != NULL && checkTypes(c, exclusion_list, COLLECTION_TYPES)) { return; }
   if ((getLongFromObjectOrReply(c, c->argv[5], &filter_count, NULL) != REDIS_OK)) { return; }
   if ((getLongFromObjectOrReply(c, c->argv[6 + filter_count], &index_count, NULL) != REDIS_OK)) { return; }
   if ((filter_count + index_count)  > (c->argc-VCONTEXT_FILTER_START) || index_count == 0) {
@@ -66,7 +67,7 @@ void vcontextCommand(redisClient *c) {
   data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
   data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
   data->inclusion_list = inclusion_list;
-  data->exclusion_list = (exclusion_list == NULL) ? NULL : (dict*)exclusion_list->ptr;;
+  data->exclusion_list = exclusion_list;
 
   replylen = addDeferredMultiBulkLength(c);
 
@@ -107,7 +108,7 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vc
   dict **filters = data->filters;
   robj **filter_objects = data->filter_objects;
   robj *inclusion_list = data->inclusion_list;
-  dict *exclusion_list = data->exclusion_list;
+  robj *exclusion_list = data->exclusion_list;
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
 
@@ -157,7 +158,7 @@ void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data
   dict **indexes = data->indexes;
   robj **index_objects = data->index_objects;
   robj *inclusion_list = data->inclusion_list;
-  dict *exclusion_list = data->exclusion_list;
+  robj *exclusion_list = data->exclusion_list;
   dict *cap = data->cap;
   dict *anti_cap = data->anti_cap;
   setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
