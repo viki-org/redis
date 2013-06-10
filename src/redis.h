@@ -320,6 +320,9 @@ typedef struct redisObject {
     unsigned lru:22;        /* lru time (relative to server.lruclock) */
     int refcount;
     void *ptr;
+
+    // metadata
+    int blocked;
 } robj;
 
 /* Macro used to initialize a Redis object allocated on the stack.

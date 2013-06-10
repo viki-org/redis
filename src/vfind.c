@@ -2,10 +2,10 @@
 #include "viki.h"
 #include <math.h>
 
-#define VFIND_FILTER_START 12
+#define VFIND_FILTER_START 13
 
 typedef struct vfindData {
-  int desc, found, added;
+  int desc, found, added, include_blocked;
   long filter_count, offset, count, up_to;
   robj *detail_field;
   robj **filter_objects;
@@ -28,21 +28,28 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
   REDIS_NOTUSED(cmd);
   REDIS_NOTUSED(flags);
 
-  num = atoi(argv[11]->ptr) + 5;
+  /* 5 keys (zset, cap, anticap, incl, excl) in addition to filters key */
+  num = atoi(argv[12]->ptr) + 5;
   /* Sanity check. Don't return any key if the command is going to
    * reply with syntax error. */
-  if (num > (argc-7)) {
+  if (num > (argc-8)) {
     *numkeys = 0;
     return NULL;
   }
   keys = zmalloc(sizeof(int)*num);
+  // zset key position
   keys[0] = 1;
+  // cap key position
   keys[1] = 2;
+  // anticap key position
   keys[2] = 3;
+  // incl key position
   keys[3] = 8;
+  // excl key position
   keys[4] = 9;
+  // filters key positions
   for (i = 5; i < num; ++i) {
-    keys[i] = 7+i;
+    keys[i] = 8+i;
   }
   *numkeys = num;
   return keys;
@@ -50,13 +57,14 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
 
 // Prepares all the sets(data, cap, anticap, filters) and calls vfindByFilters or vfindByZWithFilters
 // depending on the ratio of the input set and the smallest filter set
+// Syntax: vfind zset cap anticap offset count upto direction incl excl include_blocked detail_field filter_count [filter keys]
 void vfindCommand(redisClient *c) {
   long filter_count;
   void *replylen;
   long offset, count, up_to;
   robj *items, *cap, *anti_cap;
   robj *inclusion_list, *exclusion_list;
-  robj *direction, *data_field;
+  robj *direction, *include_blocked, *data_field;
   vfindData *data;
 
   // All the data checks
@@ -74,10 +82,11 @@ void vfindCommand(redisClient *c) {
   direction = c->argv[7];
   if ((inclusion_list = lookupKey(c->db, c->argv[8])) != NULL && checkType(c, inclusion_list, REDIS_ZSET)) { return; }
   if ((exclusion_list = lookupKey(c->db, c->argv[9])) != NULL && checkType(c, exclusion_list, REDIS_SET)) { return; }
-  data_field = c->argv[10];
-  if ((getLongFromObjectOrReply(c, c->argv[11], &filter_count, NULL) != REDIS_OK)) { return; }
+  include_blocked = c->argv[10];
+  data_field = c->argv[11];
+  if ((getLongFromObjectOrReply(c, c->argv[12], &filter_count, NULL) != REDIS_OK)) { return; }
 
-  if (filter_count > (c->argc-11)) { addReply(c, shared.syntaxerr); return; }
+  if (filter_count > (c->argc-12)) { addReply(c, shared.syntaxerr); return; }
 
   data = zmalloc(sizeof(*data));
   data->detail_field = data_field;
@@ -89,6 +98,7 @@ void vfindCommand(redisClient *c) {
   data->added = 0;
   data->found = 0;
   data->desc = 1;
+  data->include_blocked = 0;
   data->inclusion_list = inclusion_list;
 
   replylen = addDeferredMultiBulkLength(c);
@@ -100,6 +110,8 @@ void vfindCommand(redisClient *c) {
   data->exclusion_list = (exclusion_list == NULL) ? NULL : (dict*)exclusion_list->ptr;
 
   if (!strcasecmp(direction->ptr, "asc")) { data->desc = 0; }
+  // The keyword for blocked items is "withblocked"
+  if (!strcasecmp(include_blocked->ptr, "withblocked")) { data->include_blocked = 1; }
 
   data->filter_count = filter_count;
   if (filter_count != 0) {
@@ -112,6 +124,8 @@ void vfindCommand(redisClient *c) {
     for (int i = 0; i < filter_count; ++i) {
       data->filters[i] = (dict*)data->filter_objects[i]->ptr;
     }
+
+    // Size of smallest filter
     int size = dictSize(data->filters[0]);
     int ratio = zsetLength(items) / size;
 
@@ -123,14 +137,15 @@ void vfindCommand(redisClient *c) {
   initializeZsetIterator(data);
   vfindByZWithFilters(c, data);
 
-reply:
+  reply:
   addReplyLongLong(c, data->found);
-  setDeferredMultiBulkLength(c, replylen, (data->added)+1);
+  setDeferredMultiBulkLength(c, replylen, (data->added) * 2 +1);
   if (data->filters != NULL) { zfree(data->filters); }
   if (data->filter_objects != NULL) { zfree(data->filter_objects); }
   zfree(data);
 }
 
+// Used if the smallest filter has a small size compared to zset's size
 void vfindByFilters(redisClient *c, vfindData *data) {
   zset *dstzset;
   robj *item;
@@ -166,7 +181,10 @@ void vfindByFilters(redisClient *c, vfindData *data) {
     for(int i = 1; i < filter_count; ++i) {
       if (!isMember(filters[i], item)) { goto next; }
     }
-    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { goto next; }
+    
+    item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+    if (item->blocked && !data->include_blocked) { goto next; }
+    
     dictEntry *de;
     if ((de = dictFind(zset->dict, item)) != NULL) {
       score = *(double*)dictGetVal(de);
@@ -176,7 +194,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       incrRefCount(item);
       ++found;
     }
-next:
+    next:
     item = NULL;
   }
 
@@ -188,16 +206,21 @@ next:
       ln = offset == 0 ? zsl->tail : zslGetElementByRank(zsl, found - offset);
 
       while (added < found && added < count && ln != NULL) {
-        if (replyWithDetail(c, ln->obj, detail_field)) { added++; }
-        else { --found; }
+        if (replyWithDetail(c, ln->obj, detail_field)) { 
+          added++;
+          replyWithMetadata(c, generateMetadataObject(ln->obj));
+        } else { --found; }
         ln = ln->backward;
       }
     }
     else {
       ln = offset == 0 ? zsl->header->level[0].forward : zslGetElementByRank(zsl, offset+1);
 
-      while (added < found && added < count && ln != NULL) {
-        if (replyWithDetail(c, ln->obj, detail_field)) { added++; }
+      while (added < found && added < count && ln != NULL) {    
+        if (replyWithDetail(c, ln->obj, detail_field)) { 
+          added++;
+          replyWithMetadata(c, generateMetadataObject(ln->obj));
+        }
         else { --found; }
         ln = ln->level[0].forward;
       }
@@ -209,6 +232,8 @@ next:
   data->added = added;
 }
 
+
+// Used if the smallest filter has a relatively big size compared to zset's size
 void vfindByZWithFilters(redisClient *c, vfindData *data) {
   int desc = data->desc;
   int found = 0;
@@ -226,21 +251,29 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   zskiplistNode *ln = data->ln;
   robj *item;
 
-
   while(ln != NULL) {
     item = ln->obj;
+
     for(int i = 0; i < filter_count; ++i) {
       if (!isMember(filters[i], item)) { goto next; }
     }
-    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { goto next; }
+    item->blocked = heldback(cap, anti_cap, inclusion_list, exclusion_list, item);
+
+    if (item->blocked && !data->include_blocked) {  goto next; }
+
     if (found++ >= offset && added < count) {
-      if (replyWithDetail(c, item, detail_field)) { added++; }
+      if (replyWithDetail(c, item, detail_field)) { 
+        added++; 
+        replyWithMetadata(c, generateMetadataObject(item));
+      }
       else { --found; }
     }
+
     if (added == count && found >= up_to) { break; }
-next:
+    next:
     ln = desc ? ln->backward : ln->level[0].forward;
   }
+
   data->found = found;
   data->added = added;
 }

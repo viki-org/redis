@@ -2,6 +2,12 @@
 #include "viki.h"
 #include <stdio.h>
 
+int replyWithMetadata(redisClient *c, robj *metadataObj) {
+  addReplyBulk(c, metadataObj);
+  decrRefCount(metadataObj);
+  return 1;
+}
+
 int replyWithDetail(redisClient *c, robj *item, robj *field) {
   robj *value = getResourceValue(c, item, field);
   if (value == NULL) {
@@ -79,4 +85,16 @@ double getScore(robj *zsetObj, robj *item) {
   zset *zs = zsetObj->ptr;
   dictEntry *de = dictFind(zs->dict, item);
   return de == NULL ? -1 : *(double*)dictGetVal(de);
+}
+
+robj *generateMetadataObject(robj *item) {
+  char p[20] = "";
+  strcat(p, "{");
+  if (item->blocked == 1) {
+    strcat(p,"\"BLOCKED\":1");
+  } else {
+    strcat(p,"\"BLOCKED\":0");
+  }
+  strcat(p, "}");
+  return createStringObject(p, strlen(p));
 }

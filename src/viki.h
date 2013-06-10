@@ -1,12 +1,16 @@
 int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 unsigned char *zzlFind(unsigned char *zl, robj *ele, double *score);
 int replyWithDetail(redisClient *c, robj *item, robj *detail_field);
+int replyWithMetadata(redisClient *c, robj *metadataObj);
 double getScore(robj *zset, robj *item);
 robj *getResourceValue(redisClient *c, robj *item, robj *field);
 robj *getHashValue(redisClient *c, robj *item, robj *field);
 robj *generateKey(robj *item);
 robj *mergeBrickResourceDetails(redisClient *c, robj *brick, robj *key, robj *field);
-inline int isMember(dict *subject, robj *item);
+
+inline int isMember(dict *subject, robj *item) {
+  return dictFind(subject, item) != NULL;
+}
 
 inline int heldback(dict *cap, dict *anti_cap, robj *inclusiveList, dict *exclusiveList, robj *item) {
   if (inclusiveList != NULL && getScore(inclusiveList, item) != -1) { return 0; }
@@ -15,6 +19,4 @@ inline int heldback(dict *cap, dict *anti_cap, robj *inclusiveList, dict *exclus
   return (anti_cap == NULL || !isMember(anti_cap, item));
 }
 
-inline int isMember(dict *subject, robj *item) {
-  return dictFind(subject, item) != NULL;
-}
+robj *generateMetadataObject(robj *item);
