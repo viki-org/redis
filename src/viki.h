@@ -12,11 +12,14 @@ int checkTypes(redisClient *c, robj *o, int *types);
 int checkTypeNoReply(robj *o, int type);
 int belongTo(robj *collection, robj *item);
 
-inline int heldback(dict *cap, dict *anti_cap, robj *inclusiveList, robj *exclusiveList, robj *item) {
-  if (inclusiveList != NULL && belongTo(inclusiveList, item)) { return 0; }
-  if (exclusiveList != NULL && belongTo(exclusiveList, item)) { return 1; }
-  if (cap == NULL || !isMember(cap, item)) { return 0; }
-  return (anti_cap == NULL || !isMember(anti_cap, item));
+inline int heldback(long incl_count, robj **inclusiveLists, long excl_count, robj **exclusiveLists, robj *item) {
+  for (long i = 0; i < incl_count; ++i) {
+    if (inclusiveLists[i] != NULL && belongTo(inclusiveLists[i], item)) { return 0; }
+  }
+  for (long i = 0; i < excl_count; ++i) {
+    if (exclusiveLists[i] != NULL && belongTo(exclusiveLists[i], item)) { return 1; }
+  }
+  return 0;
 }
 
 inline int isMember(dict *subject, robj *item) {

@@ -87,9 +87,8 @@ int checkTypeNoReply(robj *o, int type) {
 }
 
 int checkTypes(redisClient *c, robj *o, int *types) {
-  int i;
   int n = sizeof(types) / sizeof(int);
-  for (i = 0; i < n; i++) {
+  for (int i = 0; i < n; i++) {
     // if object type is in the array
     if (!checkTypeNoReply(o, types[i])) return 0;
   }
