@@ -7,6 +7,8 @@ robj *getResourceValue(redisClient *c, robj *item, robj *field);
 robj *getHashValue(redisClient *c, robj *item, robj *field);
 robj *generateKey(robj *item);
 robj *mergeBrickResourceDetails(redisClient *c, robj *brick, robj *key, robj *field);
+robj *generateMetadataObject(robj *item);
+dict **loadSetArray(redisClient *c, int offset, long *count);
 
 inline int isMember(dict *subject, robj *item) {
   return dictFind(subject, item) != NULL;
@@ -28,5 +30,3 @@ inline int heldback2(long allow_count, dict **allows, long block_count, dict **b
   }
   return 0;
 }
-
-robj *generateMetadataObject(robj *item);

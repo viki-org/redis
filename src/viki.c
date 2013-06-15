@@ -98,3 +98,21 @@ robj *generateMetadataObject(robj *item) {
   strcat(p, "}");
   return createStringObject(p, strlen(p));
 }
+
+dict **loadSetArray(redisClient *c, int offset, long *count) {
+  long total = *count;
+  if (total == 0) { return NULL; }
+
+  long misses = 0;
+  robj *set;
+  dict **array = zmalloc(sizeof(dict*) * total);
+  for(int i = 0; i < total; ++i) {
+    if (((set = lookupKey(c->db, c->argv[i+offset])) == NULL) || set->type != REDIS_SET) {
+      ++misses;
+    } else {
+      array[i-misses] = (dict*)set->ptr;
+    }
+  }
+  *count = total - misses;
+  return array;
+}

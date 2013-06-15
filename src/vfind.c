@@ -82,8 +82,6 @@ void vfindCommand(redisClient *c) {
 
   data = zmalloc(sizeof(*data));
   data->detail_field = data_field;
-  data->allows = NULL;
-  data->blocks = NULL;
   data->filters = NULL;
   data->filter_objects = NULL;
   data->offset = offset;
@@ -103,35 +101,11 @@ void vfindCommand(redisClient *c) {
   // The keyword for blocked items is "withblocked"
   if (!strcasecmp(include_blocked->ptr, "withblocked")) { data->include_blocked = 1; }
 
+  data->allows = loadSetArray(c, 9, &allow_count);
   data->allow_count = allow_count;
-  if (allow_count != 0) {
-    data->allows = zmalloc(sizeof(dict*) * allow_count);
-    for(int i = 0; i < allow_count; ++i) {
-      robj *allow;
-      if ((allow = lookupKey(c->db, c->argv[i+9])) == NULL) {
-        data->allow_count--;
-      } else if (checkType(c, allow, REDIS_SET)) {
-        goto reply;
-      } else {
-        data->allows[i] = (dict*)allow->ptr;
-      }
-    }
-  }
 
+  data->blocks = loadSetArray(c, block_offset+1, &block_count);
   data->block_count = block_count;
-  if (block_count != 0) {
-    data->blocks = zmalloc(sizeof(dict*) * block_count);
-    for(int i = 0; i < block_count; ++i) {
-      robj *block;
-      if ((block = lookupKey(c->db, c->argv[i+block_offset+1])) == NULL) {
-        data->block_count--;
-      } else if (checkType(c, block, REDIS_SET)) {
-        goto reply;
-      } else {
-        data->blocks[i] = (dict*)block->ptr;
-      }
-    }
-  }
 
   data->filter_count = filter_count;
   if (filter_count != 0) {
