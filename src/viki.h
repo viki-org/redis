@@ -19,4 +19,14 @@ inline int heldback(dict *cap, dict *anti_cap, robj *inclusiveList, dict *exclus
   return (anti_cap == NULL || !isMember(anti_cap, item));
 }
 
+inline int heldback2(long allow_count, dict **allows, long block_count, dict **blocks, robj *item) {
+  for (int i = 0; i < allow_count; ++i) {
+    if (isMember(allows[i], item)) { return 0; }
+  }
+  for (int i = 0; i < block_count; ++i) {
+    if (isMember(blocks[i], item)) { return 1; }
+  }
+  return 0;
+}
+
 robj *generateMetadataObject(robj *item);

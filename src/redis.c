@@ -252,7 +252,7 @@ struct redisCommand redisCommandTable[] = {
     {"bitop",bitopCommand,-4,"wm",0,NULL,2,-1,1,0,0},
     {"bitcount",bitcountCommand,-2,"r",0,NULL,1,1,1,0,0},
 
-    {"vfind",vfindCommand,-12,"rm",0,vfindGetKeys,0,0,0,0,0},
+    {"vfind",vfindCommand,-11,"rm",0,vfindGetKeys,0,0,0,0,0},
     {"vsort",vsortCommand,-7,"rm",0,NULL,1,3,1,0,0},
     {"vcontext",vcontextCommand,-8,"rm",0,vcontextGetKeys,0,0,0,0,0},
 };
