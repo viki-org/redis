@@ -1,12 +1,11 @@
 #include "redis.h"
 #include "viki.h"
-#define VSORT_ID_START 7
 
 typedef struct vsortData {
-  int added;
-  long count;
-  dict *cap, *anti_cap, *exclusion_list;
-  robj *meta_field, *zscores, *inclusion_list;
+  int added, id_offset;
+  long allow_count, block_count, id_count, count;
+  dict **allows, **blocks;
+  robj *meta_field, *zscores;
 } vsortData;
 
 typedef struct {
@@ -20,55 +19,63 @@ void vsortByNone(redisClient *c, vsortData *data);
 double getScore(robj *zsetObj, robj *item);
 int itemScoreComparitor (const void* lhs, const void* rhs);
 
+
+// count zset allow_count [allows] block_count [blocks] resource_count [resources]
 void vsortCommand(redisClient *c) {
-  long count;
+  int block_offset;
+  long allow_count, block_count, count;
   void *replylen;
-  robj *cap, *anti_cap, *zscores, *inclusion_list, *exclusion_list;
+  robj *zscores;
   vsortData *data;
 
-  if ((getLongFromObjectOrReply(c, c->argv[3], &count, NULL) != REDIS_OK)) { return; }
-  if ((cap = lookupKey(c->db, c->argv[1])) != NULL && checkType(c, cap, REDIS_SET)) { return; }
-  if ((anti_cap = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, anti_cap, REDIS_SET)) { return; }
-  if ((zscores = lookupKey(c->db, c->argv[4])) != NULL && checkType(c, zscores, REDIS_ZSET)) { return; }
-  if ((inclusion_list = lookupKey(c->db, c->argv[5])) != NULL && checkType(c, inclusion_list, REDIS_ZSET)) { return; }
-  if ((exclusion_list = lookupKey(c->db, c->argv[6])) != NULL && checkType(c, exclusion_list, REDIS_SET)) { return; }
+  if ((getLongFromObjectOrReply(c, c->argv[1], &count, NULL) != REDIS_OK)) { return; }
+  if ((zscores = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, zscores, REDIS_ZSET)) { return; }
+
+  if ((getLongFromObjectOrReply(c, c->argv[3], &allow_count, NULL) != REDIS_OK)) { return; }
+  block_offset = 4 + allow_count;
+  if ((getLongFromObjectOrReply(c, c->argv[block_offset], &block_count, NULL) != REDIS_OK)) { return; }
 
   data = zmalloc(sizeof(*data));
   data->meta_field = createStringObject("meta", 4);
   data->added = 0;
   data->count = count;
   data->zscores = zscores;
-  data->cap = (cap == NULL) ? NULL : (dict*)cap->ptr;
-  data->anti_cap = (anti_cap == NULL) ? NULL : (dict*)anti_cap->ptr;
-  data->inclusion_list = inclusion_list;
-  data->exclusion_list = (exclusion_list == NULL) ? NULL : (dict*)exclusion_list->ptr;;
+  data->id_offset = 6 + allow_count + block_count;
+
+  data->allows = loadSetArray(c, 4, &allow_count);
+  data->allow_count = allow_count;
+
+  data->blocks = loadSetArray(c, block_offset+1, &block_count);
+  data->block_count = block_count;
 
   replylen = addDeferredMultiBulkLength(c);
-  if (count < c->argc - VSORT_ID_START) {
+  if (count < c->argc - data->id_offset) {
     vsortByViews(c, data);
   } else {
     vsortByNone(c, data);
   }
   setDeferredMultiBulkLength(c, replylen, data->added);
   decrRefCount(data->meta_field);
+  if (data->allows != NULL) { zfree(data->allows); }
+  if (data->blocks != NULL) { zfree(data->blocks); }
   zfree(data);
 }
 
 void vsortByViews(redisClient *c, vsortData *data) {
-  dict *cap = data->cap;
-  dict *anti_cap = data->anti_cap;
-  robj *zscores = data->zscores;
-  robj *inclusion_list = data->inclusion_list;
-  dict *exclusion_list = data->exclusion_list;
+  long allow_count = data->allow_count;
+  long block_count = data->block_count;
   long count = data->count;
   int found = 0, lowest_at = 0;
   double lowest = -1;
   double scores[count];
+  robj *zscores = data->zscores;
+  dict **allows = data->allows;
+  dict **blocks = data->blocks;
   robj **items = zmalloc(sizeof(robj*) * count);
 
-  for(int i = VSORT_ID_START; i < c->argc; ++i) {
+  for(int i = data->id_offset; i < c->argc; ++i) {
     robj *item = c->argv[i];
-    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { continue; }
+    if (heldback2(allow_count, allows, block_count, blocks, item)) { continue; }
     double score = getScore(zscores, item);
     if (found < count) {
       items[found] = item;
@@ -112,21 +119,20 @@ void vsortByViews(redisClient *c, vsortData *data) {
 }
 
 void vsortByNone(redisClient *c, vsortData *data) {
-  dict *cap = data->cap;
-  dict *anti_cap = data->anti_cap;
-  robj *inclusion_list = data->inclusion_list;
-  dict *exclusion_list = data->exclusion_list;
+  long allow_count = data->allow_count;
+  long block_count = data->block_count;
+  dict **allows = data->allows;
+  dict **blocks = data->blocks;
 
-  for(int i = VSORT_ID_START; i < c->argc; ++i) {
+  for(int i = data->id_offset; i < c->argc; ++i) {
     robj *item = c->argv[i];
-    if (heldback(cap, anti_cap, inclusion_list, exclusion_list, item)) { continue; }
+    if (heldback2(allow_count, allows, block_count, blocks, item)) { continue; }
     if (replyWithDetail(c, item, data->meta_field)) {
       ++(data->added);
     }
   }
 }
 
-int itemScoreComparitor (const void* lhs, const void* rhs)
-{
+int itemScoreComparitor (const void* lhs, const void* rhs) {
   return (*(itemScore*)rhs).score - (*(itemScore*)lhs).score;
 }
