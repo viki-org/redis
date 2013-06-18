@@ -52,7 +52,7 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
 // Prepares all the sets and calls vfindByFilters or vfindByZWithFilters
 // depending on the ratio of the input set and the smallest filter set
 // Syntax:
-// vfind zset offset count upto direction include_blocked detail_field block_count [block keys] allow_count [allow keys] filter_count [filter keys]
+// vfind zset offset count upto direction include_blocked detail_field allow_count [allows] block_count [blocks] filter_count [filter keys]
 void vfindCommand(redisClient *c) {
   long allow_count, block_count, block_offset, filter_count, filter_offset;
   void *replylen;
