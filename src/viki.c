@@ -2,12 +2,6 @@
 #include "viki.h"
 #include <stdio.h>
 
-int replyWithMetadata(redisClient *c, robj *metadataObj) {
-  addReplyBulk(c, metadataObj);
-  decrRefCount(metadataObj);
-  return 1;
-}
-
 int replyWithDetail(redisClient *c, robj *item, robj *field) {
   robj *value = getResourceValue(c, item, field);
   if (value == NULL) {
@@ -21,6 +15,10 @@ int replyWithDetail(redisClient *c, robj *item, robj *field) {
 robj *getResourceValue(redisClient *c, robj *item, robj *field) {
   robj *key = generateKey(item);
   robj *value = getHashValue(c, key, field);
+  if (value == NULL) {
+    decrRefCount(key);
+    return value;
+  }
 
   sds key_str = item->ptr;
   if (key_str[sdslen(key_str) - 1] == 'b') {
@@ -31,7 +29,19 @@ robj *getResourceValue(redisClient *c, robj *item, robj *field) {
     }
   }
 
+  int resource_length = strlen(value->ptr);
+  robj *merged = createStringObject(NULL, resource_length + (item->blocked == 1 ? 15 : 16));
+  char *p = merged->ptr;
+  memcpy(p, value->ptr, resource_length);
+  if (item->blocked == 1) {
+    memcpy(p + resource_length - 1, ",\"blocked\":true}", 16);
+  } else {
+    memcpy(p + resource_length - 1, ",\"blocked\":false}", 17);
+  }
+  decrRefCount(value);
   decrRefCount(key);
+
+  value = merged;
   return value;
 }
 
@@ -85,18 +95,6 @@ double getScore(robj *zsetObj, robj *item) {
   zset *zs = zsetObj->ptr;
   dictEntry *de = dictFind(zs->dict, item);
   return de == NULL ? -1 : *(double*)dictGetVal(de);
-}
-
-robj *generateMetadataObject(robj *item) {
-  char p[20] = "";
-  strcat(p, "{");
-  if (item->blocked == 1) {
-    strcat(p,"\"BLOCKED\":1");
-  } else {
-    strcat(p,"\"BLOCKED\":0");
-  }
-  strcat(p, "}");
-  return createStringObject(p, strlen(p));
 }
 
 dict **loadSetArray(redisClient *c, int offset, long *count) {

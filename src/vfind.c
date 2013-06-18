@@ -133,7 +133,7 @@ void vfindCommand(redisClient *c) {
 
   reply:
   addReplyLongLong(c, data->found);
-  setDeferredMultiBulkLength(c, replylen, (data->added) * 2 +1);
+  setDeferredMultiBulkLength(c, replylen, (data->added) + 1);
   if (data->allows != NULL) { zfree(data->allows); }
   if (data->blocks != NULL) { zfree(data->blocks); }
   if (data->filters != NULL) { zfree(data->filters); }
@@ -204,7 +204,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       while (added < found && added < count && ln != NULL) {
         if (replyWithDetail(c, ln->obj, detail_field)) {
           added++;
-          replyWithMetadata(c, generateMetadataObject(ln->obj));
         } else { --found; }
         ln = ln->backward;
       }
@@ -215,7 +214,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       while (added < found && added < count && ln != NULL) {
         if (replyWithDetail(c, ln->obj, detail_field)) {
           added++;
-          replyWithMetadata(c, generateMetadataObject(ln->obj));
         }
         else { --found; }
         ln = ln->level[0].forward;
@@ -260,7 +258,6 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
     if (found++ >= offset && added < count) {
       if (replyWithDetail(c, item, detail_field)) {
         added++;
-        replyWithMetadata(c, generateMetadataObject(item));
       }
       else { --found; }
     }
