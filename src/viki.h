@@ -1,8 +1,8 @@
 int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 unsigned char *zzlFind(unsigned char *zl, robj *ele, double *score);
-int replyWithDetail(redisClient *c, robj *item, robj *detail_field);
+int replyWithDetail(redisClient *c, robj *item, robj *detail_field, robj *owner_country, robj *owner_fallback);
 double getScore(robj *zset, robj *item);
-robj *getResourceValue(redisClient *c, robj *item, robj *field);
+robj *getResourceValue(redisClient *c, robj *item, robj *field, robj *owner_country, robj *owner_fallback);
 robj *getHashValue(redisClient *c, robj *item, robj *field);
 robj *generateKey(robj *item);
 robj *mergeBrickResourceDetails(redisClient *c, robj *brick, robj *key, robj *field);
@@ -12,14 +12,7 @@ inline int isMember(dict *subject, robj *item) {
   return dictFind(subject, item) != NULL;
 }
 
-inline int heldback(dict *cap, dict *anti_cap, robj *inclusiveList, dict *exclusiveList, robj *item) {
-  if (inclusiveList != NULL && getScore(inclusiveList, item) != -1) { return 0; }
-  if (exclusiveList != NULL && isMember(exclusiveList, item)) { return 1; }
-  if (cap == NULL || !isMember(cap, item)) { return 0; }
-  return (anti_cap == NULL || !isMember(anti_cap, item));
-}
-
-inline int heldback2(long allow_count, dict **allows, long block_count, dict **blocks, robj *item) {
+inline int heldback(long allow_count, dict **allows, long block_count, dict **blocks, robj *item) {
   for (int i = 0; i < allow_count; ++i) {
     if (isMember(allows[i], item)) { return 0; }
   }

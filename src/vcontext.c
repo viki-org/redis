@@ -96,7 +96,7 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vc
     for(int j = 1; j < filter_count; ++j) {
       if (!isMember(filters[j], item)) { goto next; }
     }
-    if (!heldback2(allow_count, allows, block_count, blocks, item)) {
+    if (!heldback(allow_count, allows, block_count, blocks, item)) {
       dictAdd(dstset, item, NULL);
       incrRefCount(item);
     }
@@ -141,7 +141,7 @@ void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data
     si->encoding = si->subject->encoding;
     si->di = dictGetIterator(indexes[i]);
     while((setTypeNext(si, &item, NULL)) != -1) {
-      if (!heldback2(allow_count, allows, block_count, blocks, item)) {
+      if (!heldback(allow_count, allows, block_count, blocks, item)) {
         ++(data->added);
         addReplyBulk(c, c->argv[i+index_offset+1]);
         break;

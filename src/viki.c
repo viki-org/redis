@@ -2,8 +2,8 @@
 #include "viki.h"
 #include <stdio.h>
 
-int replyWithDetail(redisClient *c, robj *item, robj *field) {
-  robj *value = getResourceValue(c, item, field);
+int replyWithDetail(redisClient *c, robj *item, robj *field, robj *owner_country, robj *owner_fallback) {
+  robj *value = getResourceValue(c, item, field, owner_country, owner_fallback);
   if (value == NULL) {
     return 0;
   }
@@ -12,7 +12,7 @@ int replyWithDetail(redisClient *c, robj *item, robj *field) {
   return 1;
 }
 
-robj *getResourceValue(redisClient *c, robj *item, robj *field) {
+robj *getResourceValue(redisClient *c, robj *item, robj *field, robj *owner_country, robj *owner_fallback) {
   robj *key = generateKey(item);
   robj *value = getHashValue(c, key, field);
   if (value == NULL) {
@@ -28,16 +28,36 @@ robj *getResourceValue(redisClient *c, robj *item, robj *field) {
       value = extended_value;
     }
   }
+  robj *owner = getHashValue(c, key, owner_country);
+  if (owner == NULL) { owner = getHashValue(c, key, owner_fallback); }
 
   int resource_length = strlen(value->ptr);
-  robj *merged = createStringObject(NULL, resource_length + (item->blocked == 1 ? 15 : 16));
+  int new_length = resource_length + (item->blocked == 1 ? 15 : 16); // ',"blocked":true'  or ',"blocked":false'
+  int owner_length = 0;
+  if (owner != NULL) {
+    owner_length = strlen(owner->ptr);
+    new_length += 11 + owner_length; // ',"owner":"ID"'
+  }
+
+  robj *merged = createStringObject(NULL, new_length);
   char *p = merged->ptr;
   memcpy(p, value->ptr, resource_length);
-  if (item->blocked == 1) {
-    memcpy(p + resource_length - 1, ",\"blocked\":true}", 16);
-  } else {
-    memcpy(p + resource_length - 1, ",\"blocked\":false}", 17);
+  int position = resource_length - 1;
+  if (owner != NULL) {
+    memcpy(p + position, ",\"owner\":\"", 10);
+    position += 10;
+    memcpy(p + position, owner->ptr, owner_length);
+    position += owner_length;
+    memcpy(p + position, "\"", 1);
+    position += 1;
   }
+
+  if (item->blocked == 1) {
+    memcpy(p + position, ",\"blocked\":true}", 16);
+  } else {
+    memcpy(p + position, ",\"blocked\":false}", 17);
+  }
+  if (owner != NULL) { decrRefCount(owner); }
   decrRefCount(value);
   decrRefCount(key);
 
