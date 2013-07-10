@@ -28,8 +28,12 @@ robj *getResourceValue(redisClient *c, robj *item, robj *field, robj *owner_coun
       value = extended_value;
     }
   }
-  robj *owner = getHashValue(c, key, owner_country);
-  if (owner == NULL) { owner = getHashValue(c, key, owner_fallback); }
+
+  robj *owner = NULL;
+  if (strlen(owner_country->ptr) > 0) {
+    owner = getHashValue(c, key, owner_country);
+    if (owner == NULL) { owner = getHashValue(c, key, owner_fallback); }
+  }
 
   int resource_length = strlen(value->ptr);
   int new_length = resource_length + (item->blocked == 1 ? 15 : 16); // ',"blocked":true'  or ',"blocked":false'

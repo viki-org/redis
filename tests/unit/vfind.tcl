@@ -247,6 +247,13 @@ start_server {tags {"vfind"}} {
       assert_equal $expected [r vfind zset 0 10 11 asc withblocked details co:us co:* 0 1 cap 2 filter1 filter2]
     }
 
+    test "handels black owner - $encoding" {
+      setup_data
+      r hset r:a co:* 123co
+      r sadd cap v x
+      assert_equal {{{"s_a":1,"blocked":false}} {{"s_c":1,"blocked":false}} 7} [r vfind zset 1 2 10 asc noblocked details '' '' 0 1 cap 0]
+    }
+
     test "includes the global owner - $encoding" {
       setup_data
       r hset r:a co:* 123co
