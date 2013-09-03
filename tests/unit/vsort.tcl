@@ -27,85 +27,69 @@ start_server {tags {"vsort"}} {
       assert_error $err {r vsort }
       assert_error $err {r vsort 5 }
       assert_error $err {r vsort 5 zset}
-      assert_error $err {r vsort 5 zset co:us}
-      assert_error $err {r vsort 5 zset co:us co:*}
-      assert_error $err {r vsort 5 zset co:us co:* 0}
-      assert_error $err {r vsort 5 zset co:us co:* 0 0}
-      assert_error $err {r vsort 5 zset co:us co:* 0 0 0}
+      assert_error $err {r vsort 5 zset 0}
+      assert_error $err {r vsort 5 zset 0 0}
+      assert_error $err {r vsort 5 zset 0 0 0}
     }
 
     test "wrong type for count - $encoding" {
       set err "ERR value is not an integer or out of range"
-      assert_error $err {r vsort abc l:-2l:us co:us co:* 1 anti 1 cap 1 100v}
+      assert_error $err {r vsort abc l:-2l:us 1 anti 1 cap 1 100v}
     }
 
     test "returns less results than requested if we don't have enough matches - $encoding" {
       setup_data
-      set expected {{{"r":100,"blocked":false}} {{"r":200,"blocked":false}}}
-      assert_equal $expected [r vsort 5 l:-2l:us co:us co:* 1 anti 1 cap 2 100c 200c]
+      set expected {{{"id":"100c","blocked":false}} {{"id":"200c","blocked":false}}}
+      assert_equal $expected [r vsort 5 l:-2l:us 1 anti 1 cap 2 100c 200c]
     }
 
     test "returns results when the count matches the exact number requested - $encoding" {
       setup_data
-      set expected {{{"r":100,"blocked":false}} {{"r":200,"blocked":false}} {{"r":300,"blocked":false}}}
-      assert_equal $expected [r vsort 3 l:-2l:us co:us co:* 1 anti 1 cap 3 100c 200c 300v]
+      set expected {{{"id":"100c","blocked":false}} {{"id":"200c","blocked":false}} {{"id":"300v","blocked":false}}}
+      assert_equal $expected [r vsort 3 l:-2l:us 1 anti 1 cap 3 100c 200c 300v]
     }
 
     test "returns the results limited by most viewed - $encoding" {
       setup_data
-      set expected {{{"r":600,"blocked":false}} {{"r":200,"blocked":false}} {{"r":300,"blocked":false}}}
-      assert_equal $expected [r vsort 3 l:-2l:us co:us co:* 1 anti 1 cap 6 100c 200c 300v 400c 500v 600v]
+      set expected {{{"id":"600v","blocked":false}} {{"id":"200c","blocked":false}} {{"id":"300v","blocked":false}}}
+      assert_equal $expected [r vsort 3 l:-2l:us 1 anti 1 cap 6 100c 200c 300v 400c 500v 600v]
     }
 
     test "returns the results limited by most viewed with unranked members - $encoding" {
       setup_data
-      set expected {{{"r":600,"blocked":false}} {{"r":200,"blocked":false}} {{"r":300,"blocked":false}}}
-      assert_equal $expected [r vsort 3 l:-2l:us co:us co:* 1 anti 1 cap 7 1000c 100c 200c 300v 400c 500v 600v]
+      set expected {{{"id":"600v","blocked":false}} {{"id":"200c","blocked":false}} {{"id":"300v","blocked":false}}}
+      assert_equal $expected [r vsort 3 l:-2l:us 1 anti 1 cap 7 1000c 100c 200c 300v 400c 500v 600v]
     }
 
     test "applies holdbacks - $encoding" {
       setup_data
       r sadd cap 200c 300v
-      set expected {{{"r":600,"blocked":false}} {{"r":100,"blocked":false}} {{"r":500,"blocked":false}}}
-      assert_equal $expected [r vsort 3 l:-2l:us co:us co:* 1 anti 1 cap 6 100c 200c 300v 400c 500v 600v]
+      set expected {{{"id":"600v","blocked":false}} {{"id":"100c","blocked":false}} {{"id":"500v","blocked":false}}}
+      assert_equal $expected [r vsort 3 l:-2l:us 1 anti 1 cap 6 100c 200c 300v 400c 500v 600v]
     }
 
     test "applies anti_cap - $encoding" {
       setup_data
       r sadd cap 200c 300v
       r sadd anti 300v
-      set expected {{{"r":600,"blocked":false}} {{"r":300,"blocked":false}} {{"r":100,"blocked":false}}}
-      assert_equal $expected [r vsort 3 l:-2l:us co:us co:* 1 anti 1 cap 6 100c 200c 300v 400c 500v 600v]
+      set expected {{{"id":"600v","blocked":false}} {{"id":"300v","blocked":false}} {{"id":"100c","blocked":false}}}
+      assert_equal $expected [r vsort 3 l:-2l:us 1 anti 1 cap 6 100c 200c 300v 400c 500v 600v]
     }
 
     test "applies inclusion list - $encoding" {
       setup_data
       r sadd cap 200c 300v
       r sadd incl 200c
-      set expected {{{"r":600,"blocked":false}} {{"r":200,"blocked":false}} {{"r":100,"blocked":false}} {{"r":500,"blocked":false}}}
-      assert_equal $expected [r vsort 4 l:-2l:us co:us co:* 2 anti incl 1 cap 6 100c 200c 300v 400c 500v 600v]
+      set expected {{{"id":"600v","blocked":false}} {{"id":"200c","blocked":false}} {{"id":"100c","blocked":false}} {{"id":"500v","blocked":false}}}
+      assert_equal $expected [r vsort 4 l:-2l:us 2 anti incl 1 cap 6 100c 200c 300v 400c 500v 600v]
     }
 
     test "applies exclusion list - $encoding" {
       setup_data
       r sadd cap 300v
       r sadd excl 200c
-      set expected {{{"r":600,"blocked":false}} {{"r":100,"blocked":false}} {{"r":500,"blocked":false}}}
-      assert_equal $expected [r vsort 3 l:-2l:us co:us co:* 1 anti 2 cap excl 6 100c 200c 300v 400c 500v 600v]
-    }
-
-    test "includes the global owner - $encoding" {
-      setup_data
-      r hset r:100c co:* 123co
-      set expected {{{"r":100,"owner":"123co","blocked":false}} {{"r":200,"blocked":false}}}
-      assert_equal $expected [r vsort 5 l:-2l:us co:us co:* 1 anti 1 cap 2 100c 200c]
-    }
-
-    test "includes the country owner owner - $encoding" {
-      setup_data
-      r hset r:100c co:kr 22co
-      set expected {{{"r":100,"owner":"22co","blocked":false}} {{"r":200,"blocked":false}}}
-      assert_equal $expected [r vsort 5 l:-2l:us co:kr co:* 1 anti 1 cap 2 100c 200c]
+      set expected {{{"id":"600v","blocked":false}} {{"id":"100c","blocked":false}} {{"id":"500v","blocked":false}}}
+      assert_equal $expected [r vsort 3 l:-2l:us 1 anti 2 cap excl 6 100c 200c 300v 400c 500v 600v]
     }
   }
   basics ziplist

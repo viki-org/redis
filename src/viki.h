@@ -1,8 +1,8 @@
 int qsortCompareSetsByCardinality(const void *s1, const void *s2);
 unsigned char *zzlFind(unsigned char *zl, robj *ele, double *score);
-int replyWithDetail(redisClient *c, robj *item, robj *detail_field, robj *owner_country, robj *owner_fallback);
+int replyWithDetail(redisClient *c, robj *item);
 double getScore(robj *zset, robj *item);
-robj *getResourceValue(redisClient *c, robj *item, robj *field, robj *owner_country, robj *owner_fallback);
+robj *getResourceValue(redisClient *c, robj *item);
 robj *getHashValue(redisClient *c, robj *item, robj *field);
 robj *generateKey(robj *item);
 robj *mergeBrickResourceDetails(redisClient *c, robj *brick, robj *key, robj *field);

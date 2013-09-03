@@ -5,7 +5,7 @@ typedef struct vsortData {
   int added, id_offset;
   long allow_count, block_count, id_count, count;
   dict **allows, **blocks;
-  robj *meta_field, *zscores, *owner_country, *owner_fallback;
+  robj *zscores;
 } vsortData;
 
 typedef struct {
@@ -29,20 +29,17 @@ void vsortCommand(redisClient *c) {
   if ((getLongFromObjectOrReply(c, c->argv[1], &count, NULL) != REDIS_OK)) { return; }
   if ((zscores = lookupKey(c->db, c->argv[2])) != NULL && checkType(c, zscores, REDIS_ZSET)) { return; }
 
-  if ((getLongFromObjectOrReply(c, c->argv[5], &allow_count, NULL) != REDIS_OK)) { return; }
-  block_offset = 6 + allow_count;
+  if ((getLongFromObjectOrReply(c, c->argv[3], &allow_count, NULL) != REDIS_OK)) { return; }
+  block_offset = 4 + allow_count;
   if ((getLongFromObjectOrReply(c, c->argv[block_offset], &block_count, NULL) != REDIS_OK)) { return; }
 
   data = zmalloc(sizeof(*data));
-  data->meta_field = createStringObject("meta", 4);
   data->added = 0;
-  data->owner_country = c->argv[3];
-  data->owner_fallback = c->argv[4];
   data->count = count;
   data->zscores = zscores;
-  data->id_offset = 8 + allow_count + block_count;
+  data->id_offset = 6 + allow_count + block_count;
 
-  data->allows = loadSetArray(c, 6, &allow_count);
+  data->allows = loadSetArray(c, 4, &allow_count);
   data->allow_count = allow_count;
 
   data->blocks = loadSetArray(c, block_offset+1, &block_count);
@@ -55,7 +52,6 @@ void vsortCommand(redisClient *c) {
     vsortByNone(c, data);
   }
   setDeferredMultiBulkLength(c, replylen, data->added);
-  decrRefCount(data->meta_field);
   if (data->allows != NULL) { zfree(data->allows); }
   if (data->blocks != NULL) { zfree(data->blocks); }
   zfree(data);
@@ -68,8 +64,6 @@ void vsortByViews(redisClient *c, vsortData *data) {
   int found = 0, lowest_at = 0;
   double lowest = -1;
   double scores[count];
-  robj *owner_country = data->owner_country;
-  robj *owner_fallback = data->owner_fallback;
   robj *zscores = data->zscores;
   dict **allows = data->allows;
   dict **blocks = data->blocks;
@@ -108,12 +102,12 @@ void vsortByViews(redisClient *c, vsortData *data) {
     }
     qsort(map, found, sizeof(itemScore), itemScoreComparitor);
     for(int i = 0; i < found; ++i) {
-      if (replyWithDetail(c, map[i].item, data->meta_field, owner_country, owner_fallback)) {
+      if (replyWithDetail(c, map[i].item)) {
         ++(data->added);
       }
     }
   } else if (found == 1) {
-    if (replyWithDetail(c, items[0], data->meta_field, owner_country, owner_fallback)) {
+    if (replyWithDetail(c, items[0])) {
       ++(data->added);
     }
   }
@@ -123,15 +117,13 @@ void vsortByViews(redisClient *c, vsortData *data) {
 void vsortByNone(redisClient *c, vsortData *data) {
   long allow_count = data->allow_count;
   long block_count = data->block_count;
-  robj *owner_country = data->owner_country;
-  robj *owner_fallback = data->owner_fallback;
   dict **allows = data->allows;
   dict **blocks = data->blocks;
 
   for(int i = data->id_offset; i < c->argc; ++i) {
     robj *item = c->argv[i];
     if (heldback(allow_count, allows, block_count, blocks, item)) { continue; }
-    if (replyWithDetail(c, item, data->meta_field, owner_country, owner_fallback)) {
+    if (replyWithDetail(c, item)) {
       ++(data->added);
     }
   }

@@ -5,7 +5,6 @@
 typedef struct vfindData {
   int desc, found, added, include_blocked;
   long allow_count, block_count, filter_count, offset, count, up_to;
-  robj *detail_field, *owner_country, *owner_fallback;
   robj **filter_objects;
   dict **allows, **blocks, **filters;
   zskiplistNode *ln;
@@ -24,10 +23,10 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
   REDIS_NOTUSED(flags);
 
   int i, num, offset, *keys;
-  int allow_count = atoi(argv[10]->ptr);
-  int block_offset = 11 + allow_count;
+  int allow_count = atoi(argv[7]->ptr);
+  int block_offset = 8 + allow_count;
   int block_count = atoi(argv[block_offset]->ptr);
-  int filter_offset = 12 + allow_count + block_count;
+  int filter_offset = 9 + allow_count + block_count;
   int filter_count = atoi(argv[filter_offset]->ptr);
 
   num = 1 + block_count + allow_count + filter_count;  //1 is for the zset
@@ -37,7 +36,7 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
   offset = 1;
 
   for (i = 0; i < allow_count; ++i) {
-    keys[offset++] = 11+i;
+    keys[offset++] = 8+i;
   }
   for (i = 0; i < block_count; ++i) {
     keys[offset++] = block_offset+i;
@@ -52,12 +51,12 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys,
 // Prepares all the sets and calls vfindByFilters or vfindByZWithFilters
 // depending on the ratio of the input set and the smallest filter set
 // Syntax:
-// vfind zset offset count upto direction include_blocked detail_field allow_count [allows] block_count [blocks] filter_count [filter keys]
+// vfind zset offset count upto direction include_blocked allow_count [allows] block_count [blocks] filter_count [filter keys]
 void vfindCommand(redisClient *c) {
   long allow_count, block_count, block_offset, filter_count, filter_offset;
   void *replylen;
   long offset, count, up_to;
-  robj *items, *direction, *include_blocked, *data_field;
+  robj *items, *direction, *include_blocked;
   vfindData *data;
 
   // All the data checks
@@ -72,18 +71,14 @@ void vfindCommand(redisClient *c) {
   if ((getLongFromObjectOrReply(c, c->argv[4], &up_to, NULL) != REDIS_OK)) { return; }
   direction = c->argv[5];
   include_blocked = c->argv[6];
-  data_field = c->argv[7];
 
-  if ((getLongFromObjectOrReply(c, c->argv[10], &allow_count, NULL) != REDIS_OK)) { return; }
-  block_offset = 11 + allow_count;
+  if ((getLongFromObjectOrReply(c, c->argv[7], &allow_count, NULL) != REDIS_OK)) { return; }
+  block_offset = 8 + allow_count;
   if ((getLongFromObjectOrReply(c, c->argv[block_offset], &block_count, NULL) != REDIS_OK)) { return; }
-  filter_offset = 12 + allow_count + block_count;
+  filter_offset = 9 + allow_count + block_count;
   if ((getLongFromObjectOrReply(c, c->argv[filter_offset], &filter_count, NULL) != REDIS_OK)) { return; }
 
   data = zmalloc(sizeof(*data));
-  data->owner_country = c->argv[8];
-  data->owner_fallback = c->argv[9];
-  data->detail_field = data_field;
   data->filters = NULL;
   data->filter_objects = NULL;
   data->offset = offset;
@@ -103,7 +98,7 @@ void vfindCommand(redisClient *c) {
   // The keyword for blocked items is "withblocked"
   if (!strcasecmp(include_blocked->ptr, "withblocked")) { data->include_blocked = 1; }
 
-  data->allows = loadSetArray(c, 11, &allow_count);
+  data->allows = loadSetArray(c, 8, &allow_count);
   data->allow_count = allow_count;
 
   data->blocks = loadSetArray(c, block_offset+1, &block_count);
@@ -162,9 +157,6 @@ void vfindByFilters(redisClient *c, vfindData *data) {
   dict **allows = data->allows;
   dict **blocks = data->blocks;
   dict **filters = data->filters;
-  robj *detail_field = data->detail_field;
-  robj *owner_country = data->owner_country;
-  robj *owner_fallback = data->owner_fallback;
   int64_t intobj;
   double score;
 
@@ -206,7 +198,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       ln = offset == 0 ? zsl->tail : zslGetElementByRank(zsl, found - offset);
 
       while (added < found && added < count && ln != NULL) {
-        if (replyWithDetail(c, ln->obj, detail_field, owner_country, owner_fallback)) {
+        if (replyWithDetail(c, ln->obj)) {
           added++;
         } else { --found; }
         ln = ln->backward;
@@ -216,7 +208,7 @@ void vfindByFilters(redisClient *c, vfindData *data) {
       ln = offset == 0 ? zsl->header->level[0].forward : zslGetElementByRank(zsl, offset+1);
 
       while (added < found && added < count && ln != NULL) {
-        if (replyWithDetail(c, ln->obj, detail_field, owner_country, owner_fallback)) {
+        if (replyWithDetail(c, ln->obj)) {
           added++;
         }
         else { --found; }
@@ -245,9 +237,6 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
   dict **allows = data->allows;
   dict **blocks = data->blocks;
   dict **filters = data->filters;
-  robj *detail_field = data->detail_field;
-  robj *owner_country = data->owner_country;
-  robj *owner_fallback = data->owner_fallback;
   zskiplistNode *ln = data->ln;
   robj *item;
 
@@ -262,7 +251,7 @@ void vfindByZWithFilters(redisClient *c, vfindData *data) {
     if (item->blocked && !data->include_blocked) {  goto next; }
 
     if (found++ >= offset && added < count) {
-      if (replyWithDetail(c, item, detail_field, owner_country, owner_fallback)) {
+      if (replyWithDetail(c, item)) {
         added++;
       }
       else { --found; }
