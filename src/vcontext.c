@@ -107,18 +107,23 @@ void vcontextWithOneFilter(redisClient *c, long filter_offset, long index_count,
         addReplyBulk(c, c->argv[n->i+index_offset+1]);
         last->next = n->next;
         zfree(n);
+        if (head->next == NULL) { goto cleanup; }
       } else {
         last = n;
       }
     }
   }
 
-  indexNode *n = head;
-  while (1) {
-     if (n == NULL) { break; }
-     indexNode *curr = n;
-     n = curr->next;
-     zfree(curr);
+cleanup:
+
+  {
+    indexNode *n = head;
+    while (1) {
+       if (n == NULL) { break; }
+       indexNode *curr = n;
+       n = curr->next;
+       zfree(curr);
+    }
   }
   dictReleaseIterator(si->di);
   zfree(si);
