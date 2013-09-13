@@ -4,8 +4,8 @@
 typedef struct vcontextData {
   int added;
   long allow_count, block_count, index_offset;
-  robj **filter_objects, **index_objects;
-  dict **allows, **blocks, **filters, **indexes;
+  robj **index_objects;
+  dict **allows, **blocks, **indexes;
 } vcontextData;
 
 typedef struct indexNode {
@@ -14,7 +14,7 @@ typedef struct indexNode {
   struct indexNode *next;
 } indexNode;
 
-void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vcontextData *data);
+void vcontextWithFilters(redisClient *c, long filter_offset, long filter_count, long index_count, vcontextData *data);
 void vcontextWithOneFilter(redisClient *c, long filter_offset, long index_count, vcontextData *data);
 void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data);
 
@@ -33,8 +33,6 @@ void vcontextCommand(redisClient *c) {
   if ((getLongFromObjectOrReply(c, c->argv[index_offset], &index_count, NULL) != REDIS_OK)) { return; }
 
   data = zmalloc(sizeof(*data));
-  data->filters = NULL;
-  data->filter_objects = NULL;
   data->indexes = zmalloc(sizeof(dict*) * index_count);
   data->index_objects = zmalloc(sizeof(robj*) * index_count);
   data->added = 0;
@@ -53,29 +51,18 @@ void vcontextCommand(redisClient *c) {
     data->indexes[i] = data->index_objects[i] == NULL ? NULL : (dict*)data->index_objects[i]->ptr;
   }
 
-  if (filter_count  == 1) {
-    vcontextWithOneFilter(c, filter_offset, index_count, data);
-  } else if (filter_count == 0) {
+  if (filter_count == 0) {
     vcontextWithoutFilters(c, index_count, data);
+  } else if (filter_count == 1) {
+    vcontextWithOneFilter(c, filter_offset, index_count, data);
   } else {
-    data->filters = zmalloc(sizeof(dict*) * filter_count);
-    data->filter_objects = zmalloc(sizeof(robj*) * filter_count);
-    for(int i = 0; i < filter_count; ++i) {
-      if ((data->filter_objects[i] = lookupKey(c->db, c->argv[i+filter_offset+1])) == NULL || checkType(c, data->filter_objects[i], REDIS_SET)) { goto reply; }
-    }
-    qsort(data->filter_objects, filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
-    for (int i = 0; i < filter_count; ++i) {
-      data->filters[i] = (dict*)data->filter_objects[i]->ptr;
-    }
-    vcontextWithFilters(c, filter_count, index_count, data);
+    vcontextWithFilters(c, filter_offset, filter_count, index_count, data);
   }
 
 reply:
   setDeferredMultiBulkLength(c, replylen, data->added);
   if (data->allows != NULL) { zfree(data->allows); }
   if (data->blocks != NULL) { zfree(data->blocks); }
-  if (data->filters != NULL) { zfree(data->filters); }
-  if (data->filter_objects != NULL) { zfree(data->filter_objects); }
   zfree(data->indexes);
   zfree(data->index_objects);
   zfree(data);
@@ -137,7 +124,7 @@ void vcontextWithOneFilter(redisClient *c, long filter_offset, long index_count,
   zfree(si);
 }
 
-void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vcontextData *data) {
+void vcontextWithFilters(redisClient *c, long filter_offset, long filter_count, long index_count, vcontextData *data) {
   robj *item;
   dict *index;
   long allow_count = data->allow_count;
@@ -146,8 +133,17 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vc
   dict **allows = data->allows;
   dict **blocks = data->blocks;
   dict **indexes = data->indexes;
-  dict **filters = data->filters;
-  robj **filter_objects = data->filter_objects;
+
+  dict **filters = zmalloc(sizeof(dict*) * filter_count);
+  robj **filter_objects = zmalloc(sizeof(robj*) * filter_count);
+
+  for(int i = 0; i < filter_count; ++i) {
+    if ((filter_objects[i] = lookupKey(c->db, c->argv[i+filter_offset+1])) == NULL || checkType(c, filter_objects[i], REDIS_SET)) { goto cleanup; }
+  }
+  qsort(filter_objects, filter_count, sizeof(robj*), qsortCompareSetsByCardinality);
+  for (int i = 0; i < filter_count; ++i) {
+    filters[i] = (dict*)filter_objects[i]->ptr;
+  }
 
   robj *dstobj = createSetObject();
   dict *dstset = (dict*)dstobj->ptr;
@@ -187,6 +183,10 @@ void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vc
   }
   zfree(si);
   decrRefCount(dstobj);
+
+cleanup:
+  zfree(filters);
+  zfree(filter_objects);
 }
 
 void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data) {
