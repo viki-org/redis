@@ -4,7 +4,7 @@ start_server {tags {"vcontext"}} {
 
     r sadd x:g1 a   c      f   h  i    k l m n o p
     r sadd x:g2     c          h
-    r sadd x:g3                          l
+    r sadd x:g3                      j   l
     r sadd x:us a        e   g h     j k l   n
     r sadd x:ca   b   d  e        i  j   l     o p
     r sadd x:mx a

@@ -8,7 +8,14 @@ typedef struct vcontextData {
   dict **allows, **blocks, **filters, **indexes;
 } vcontextData;
 
+typedef struct indexNode {
+  int i;
+  dict *index;
+  struct indexNode *next;
+} indexNode;
+
 void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vcontextData *data);
+void vcontextWithOneFilter(redisClient *c, long filter_offset, long index_count, vcontextData *data);
 void vcontextWithoutFilters(redisClient *c, long index_count, vcontextData *data);
 
 // vcontext allow_count [allows] block_count [blocks] filter_count [filters] index_count [indexes]
@@ -46,7 +53,11 @@ void vcontextCommand(redisClient *c) {
     data->indexes[i] = data->index_objects[i] == NULL ? NULL : (dict*)data->index_objects[i]->ptr;
   }
 
-  if (filter_count > 0) {
+  if (filter_count  == 1) {
+    vcontextWithOneFilter(c, filter_offset, index_count, data);
+  } else if (filter_count == 0) {
+    vcontextWithoutFilters(c, index_count, data);
+  } else {
     data->filters = zmalloc(sizeof(dict*) * filter_count);
     data->filter_objects = zmalloc(sizeof(robj*) * filter_count);
     for(int i = 0; i < filter_count; ++i) {
@@ -57,8 +68,6 @@ void vcontextCommand(redisClient *c) {
       data->filters[i] = (dict*)data->filter_objects[i]->ptr;
     }
     vcontextWithFilters(c, filter_count, index_count, data);
-  } else {
-    vcontextWithoutFilters(c, index_count, data);
   }
 
 reply:
@@ -70,6 +79,62 @@ reply:
   zfree(data->indexes);
   zfree(data->index_objects);
   zfree(data);
+}
+
+void vcontextWithOneFilter(redisClient *c, long filter_offset, long index_count, vcontextData *data) {
+  robj *item;
+  long allow_count = data->allow_count;
+  long block_count = data->block_count;
+  long index_offset = data->index_offset;
+  dict **allows = data->allows;
+  dict **blocks = data->blocks;
+  dict **indexes = data->indexes;
+
+  robj *filter_object;
+  if ((filter_object = lookupKey(c->db, c->argv[filter_offset+1])) == NULL || checkType(c, filter_object, REDIS_SET)) { return; }
+
+  setTypeIterator *si = zmalloc(sizeof(setTypeIterator));
+  si->subject = filter_object;
+  si->encoding = si->subject->encoding;
+  si->di = dictGetIterator((dict*)filter_object->ptr);
+
+  indexNode *head = zmalloc(sizeof(indexNode));
+  head->i = -1;
+  indexNode *last = head;
+  for(int i = 0; i < index_count; ++i) {
+    if (indexes[i] == NULL) { continue; }
+    indexNode *node = zmalloc(sizeof(indexNode));
+    node->i = i;
+    node->index = indexes[i];
+    last->next = node;
+    last = node;
+  }
+  last->next = NULL;
+
+  while((setTypeNext(si, &item, NULL)) != -1) {
+    if (heldback(allow_count, allows, block_count, blocks, item)) { continue; }
+    indexNode *last = head;
+    for (indexNode *n = head->next; n != NULL; n = n->next) {
+      if (isMember(n->index, item)) {
+        ++(data->added);
+        addReplyBulk(c, c->argv[n->i+index_offset+1]);
+        last->next = n->next;
+        zfree(n);
+      } else {
+        last = n;
+      }
+    }
+  }
+
+  indexNode *n = head;
+  while (1) {
+     if (n == NULL) { break; }
+     indexNode *curr = n;
+     n = curr->next;
+     zfree(curr);
+  }
+  dictReleaseIterator(si->di);
+  zfree(si);
 }
 
 void vcontextWithFilters(redisClient *c, long filter_count, long index_count, vcontextData *data) {
