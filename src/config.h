@@ -45,7 +45,9 @@
 
 /* Test for proc filesystem */
 #ifdef __linux__
-#define HAVE_PROCFS 1
+#define HAVE_PROC_STAT 1
+#define HAVE_PROC_MAPS 1
+#define HAVE_PROC_SMAPS 1
 #endif
 
 /* Test for task_info() */
@@ -101,6 +103,20 @@
 #define rdb_fsync_range(fd,off,size) sync_file_range(fd,off,size,SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE)
 #else
 #define rdb_fsync_range(fd,off,size) fsync(fd)
+#endif
+
+/* Check if we can use setproctitle().
+ * BSD systems have support for it, we provide an implementation for
+ * Linux and osx. */
+#if (defined __NetBSD__ || defined __FreeBSD__ || defined __OpenBSD__)
+#define USE_SETPROCTITLE
+#endif
+
+#if (defined __linux || defined __APPLE__)
+#define USE_SETPROCTITLE
+#define INIT_SETPROCTITLE_REPLACEMENT
+void spt_init(int argc, char *argv[]);
+void setproctitle(const char *fmt, ...);
 #endif
 
 /* Byte ordering detection */

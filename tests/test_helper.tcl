@@ -16,6 +16,7 @@ set ::all_tests {
     unit/auth
     unit/protocol
     unit/basic
+    unit/scan
     unit/type/list
     unit/type/list-2
     unit/type/list-3
@@ -32,6 +33,7 @@ set ::all_tests {
     integration/replication-2
     integration/replication-3
     integration/replication-4
+    integration/replication-psync
     integration/aof
     integration/rdb
     integration/convert-zipmap-hash-on-load
@@ -44,9 +46,7 @@ set ::all_tests {
     unit/obuf-limits
     unit/dump
     unit/bitops
-    unit/vfind
-    unit/vsort
-    unit/vcontext
+    unit/memefficiency
 }
 # Index to the next test to run in the ::all_tests list.
 set ::next_test 0
@@ -188,7 +188,7 @@ proc test_server_main {} {
     if {!$::quiet} {
         puts "Starting test server at port $port"
     }
-    socket -server accept_test_clients $port
+    socket -server accept_test_clients -myaddr 127.0.0.1 $port
 
     # Start the client instances
     set ::clients_pids {}
@@ -441,15 +441,9 @@ proc read_from_replication_stream {s} {
         after 100
     }
     fconfigure $s -blocking 1
-
-    # Workaround for Redis 2.6, not always using the new protocol in the
-    # replication channel (this was fixed in >= 2.8).
-    if {[string tolower [lindex [split $count] 0]] eq {select}} {
-        return $count
-    }
+    set count [string range $count 1 end]
 
     # Return a list of arguments for the command.
-    set count [string range $count 1 end]
     set res {}
     for {set j 0} {$j < $count} {incr j} {
         read $s 1

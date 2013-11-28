@@ -263,7 +263,7 @@ start_server {
         r del blist target
         r set blist nolist
         $rd brpoplpush blist target 1
-        assert_error "ERR*wrong kind*" {$rd read}
+        assert_error "WRONGTYPE*" {$rd read}
     }
 
     test "BRPOPLPUSH with wrong destination type" {
@@ -272,7 +272,7 @@ start_server {
         r set target nolist
         r lpush blist foo
         $rd brpoplpush blist target 1
-        assert_error "ERR*wrong kind*" {$rd read}
+        assert_error "WRONGTYPE*" {$rd read}
 
         set rd [redis_deferring_client]
         r del blist target
@@ -280,7 +280,7 @@ start_server {
         $rd brpoplpush blist target 0
         after 1000
         r rpush blist foo
-        assert_error "ERR*wrong kind*" {$rd read}
+        assert_error "WRONGTYPE*" {$rd read}
         assert_equal {foo} [r lrange blist 0 -1]
     }
 
@@ -290,7 +290,7 @@ start_server {
         r set target nolist
         $rd brpoplpush blist target 0
         r rpush blist a b c
-        assert_error "ERR*wrong kind*" {$rd read}
+        assert_error "WRONGTYPE*" {$rd read}
         r lrange blist 0 -1
     } {a b c}
 
@@ -303,7 +303,7 @@ start_server {
         $rd2 brpoplpush blist target2 0
         r lpush blist foo
 
-        assert_error "ERR*wrong kind*" {$rd1 read}
+        assert_error "WRONGTYPE*" {$rd1 read}
         assert_equal {foo} [$rd2 read]
         assert_equal {foo} [r lrange target2 0 -1]
     }
@@ -445,7 +445,7 @@ start_server {
             r del blist1 blist2
             r set blist2 nolist
             $rd $pop blist1 blist2 1
-            assert_error "ERR*wrong kind*" {$rd read}
+            assert_error "WRONGTYPE*" {$rd read}
         }
 
         test "$pop: timeout" {
@@ -615,7 +615,7 @@ start_server {
     test {LLEN against non-list value error} {
         r del mylist
         r set mylist foobar
-        assert_error ERR* {r llen mylist}
+        assert_error WRONGTYPE* {r llen mylist}
     }
 
     test {LLEN against non existing key} {
@@ -623,7 +623,7 @@ start_server {
     }
 
     test {LINDEX against non-list value error} {
-        assert_error ERR* {r lindex mylist 0}
+        assert_error WRONGTYPE* {r lindex mylist 0}
     }
 
     test {LINDEX against non existing key} {
@@ -631,11 +631,11 @@ start_server {
     }
 
     test {LPUSH against non-list value error} {
-        assert_error ERR* {r lpush mylist 0}
+        assert_error WRONGTYPE* {r lpush mylist 0}
     }
 
     test {RPUSH against non-list value error} {
-        assert_error ERR* {r rpush mylist 0}
+        assert_error WRONGTYPE* {r rpush mylist 0}
     }
 
     foreach {type large} [array get largevalue] {
@@ -684,7 +684,7 @@ start_server {
     test {RPOPLPUSH against non list src key} {
         r del srclist dstlist
         r set srclist x
-        assert_error ERR* {r rpoplpush srclist dstlist}
+        assert_error WRONGTYPE* {r rpoplpush srclist dstlist}
         assert_type string srclist
         assert_equal 0 [r exists newlist]
     }
@@ -692,7 +692,7 @@ start_server {
     test {RPOPLPUSH against non list dst key} {
         create_ziplist srclist {a b c d}
         r set dstlist x
-        assert_error ERR* {r rpoplpush srclist dstlist}
+        assert_error WRONGTYPE* {r rpoplpush srclist dstlist}
         assert_type string dstlist
         assert_equal {a b c d} [r lrange srclist 0 -1]
     }
@@ -718,8 +718,8 @@ start_server {
 
     test {LPOP/RPOP against non list value} {
         r set notalist foo
-        assert_error ERR*kind* {r lpop notalist}
-        assert_error ERR*kind* {r rpop notalist}
+        assert_error WRONGTYPE* {r lpop notalist}
+        assert_error WRONGTYPE* {r rpop notalist}
     }
 
     foreach {type num} {ziplist 250 linkedlist 500} {
@@ -819,7 +819,7 @@ start_server {
 
     test {LSET against non list value} {
         r set nolist foobar
-        assert_error ERR*value* {r lset nolist 0 foo}
+        assert_error WRONGTYPE* {r lset nolist 0 foo}
     }
 
     foreach {type e} [array get largevalue] {

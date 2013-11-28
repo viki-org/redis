@@ -35,6 +35,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <time.h>
 #include <sys/time.h>
 #include <signal.h>
 #include <assert.h>
@@ -555,12 +556,11 @@ usage:
 " -dbnum <db>        SELECT the specified db number (default 0)\n"
 " -k <boolean>       1=keep alive 0=reconnect (default 1)\n"
 " -r <keyspacelen>   Use random keys for SET/GET/INCR, random values for SADD\n"
-"  Using this option the benchmark will get/set keys\n"
-"  in the form mykey_rand:000000012456 instead of constant\n"
-"  keys, the <keyspacelen> argument determines the max\n"
-"  number of values for the random number. For instance\n"
-"  if set to 10 only rand:000000000000 - rand:000000000009\n"
-"  range will be allowed.\n"
+"  Using this option the benchmark will expand the string __rand_int__\n"
+"  inside an argument with a 12 digits number in the specified range\n"
+"  from 0 to keyspacelen-1. The substitution changes every time a command\n"
+"  is executed. Default tests use this to hit random keys in the\n"
+"  specified range.\n"
 " -P <numreq>        Pipeline <numreq> requests. Default 1 (no pipeline).\n"
 " -q                 Quiet. Just show query/sec values\n"
 " --csv              Output in CSV format\n"
@@ -621,6 +621,7 @@ int main(int argc, const char **argv) {
 
     client c;
 
+    srandom(time(NULL));
     signal(SIGHUP, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
 

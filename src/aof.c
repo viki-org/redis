@@ -456,7 +456,7 @@ struct redisClient *createFakeClient(void) {
     c->reply_bytes = 0;
     c->obuf_soft_limit_reached_time = 0;
     c->watched_keys = listCreate();
-    listSetFreeMethod(c->reply,decrRefCount);
+    listSetFreeMethod(c->reply,decrRefCountVoid);
     listSetDupMethod(c->reply,dupClientReplyValue);
     initClientMultiState(c);
     return c;
@@ -536,7 +536,7 @@ int loadAppendOnlyFile(char *filename) {
         /* Command lookup */
         cmd = lookupCommand(argv[0]->ptr);
         if (!cmd) {
-            redisLog(REDIS_WARNING,"Unknown command '%s' reading the append only file", argv[0]->ptr);
+            redisLog(REDIS_WARNING,"Unknown command '%s' reading the append only file", (char*)argv[0]->ptr);
             exit(1);
         }
         /* Run the command in the context of a fake client */
@@ -962,8 +962,8 @@ int rewriteAppendOnlyFileBackground(void) {
         char tmpfile[256];
 
         /* Child */
-        if (server.ipfd > 0) close(server.ipfd);
-        if (server.sofd > 0) close(server.sofd);
+        closeListeningSockets(0);
+        redisSetProcTitle("redis-aof-rewrite");
         snprintf(tmpfile,256,"temp-rewriteaof-bg-%d.aof", (int) getpid());
         if (rewriteAppendOnlyFile(tmpfile) == REDIS_OK) {
             size_t private_dirty = zmalloc_get_private_dirty();
@@ -997,6 +997,7 @@ int rewriteAppendOnlyFileBackground(void) {
          * accumulated by the parent into server.aof_rewrite_buf will start
          * with a SELECT statement and it will be safe to merge. */
         server.aof_selected_db = -1;
+        replicationScriptCacheFlush();
         return REDIS_OK;
     }
     return REDIS_OK; /* unreached */

@@ -35,6 +35,7 @@
 #include <errno.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include "config.h"
 
 #if (ULONG_MAX == 4294967295UL)
 #define MEMTEST_32BIT
@@ -235,6 +236,32 @@ void memtest_test(size_t megabytes, int passes) {
         memtest_fill_value(m,bytes,ULONG_ONEZERO,ULONG_ZEROONE,'C');
         memtest_progress_end();
         memtest_compare_times(m,bytes,pass,4);
+    }
+}
+
+void memtest_non_destructive_invert(void *addr, size_t size) {
+    volatile unsigned long *p = addr;
+    size_t words = size / sizeof(unsigned long);
+    size_t j;
+
+    /* Invert */
+    for (j = 0; j < words; j++)
+        p[j] = ~p[j];
+}
+
+void memtest_non_destructive_swap(void *addr, size_t size) {
+    volatile unsigned long *p = addr;
+    size_t words = size / sizeof(unsigned long);
+    size_t j;
+
+    /* Swap */
+    for (j = 0; j < words; j += 2) {
+        unsigned long a, b;
+
+        a = p[j];
+        b = p[j+1];
+        p[j] = b;
+        p[j+1] = a;
     }
 }
 

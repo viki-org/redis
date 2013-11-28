@@ -48,7 +48,7 @@ start_server {tags {"vfind"}} {
     }
 
     test "vfind invalid list type - $encoding" {
-      set err "ERR Operation against a key holding the wrong kind of value"
+      set err "WRONGTYPE Operation against a key holding the wrong kind of value"
       r sadd myset a v c d e f g mnm
       assert_error $err {r vfind myset 0 10 1000 desc noblocked 0 0 0}
     }
@@ -162,7 +162,7 @@ start_server {tags {"vfind"}} {
       r hmset r:1b details "{\"name\":\"1b_details\"}" resource_id 3v
       r hmset r:3v details "{\"name\":\"3v_details\"}"
       r sadd cap a v c 3v
-      set expected {{{"name":"1b_details", "resource": {"name":"3v_details"},"blocked":false}} 1}
+      set expected {{{"id":"1b","blocked":false}} 1}
       assert_equal $expected [r vfind a_zset 0 10 10 desc noblocked 0 1 cap 0]
     }
 
@@ -172,7 +172,7 @@ start_server {tags {"vfind"}} {
       r hmset r:1b details "{\"name\":\"1b_details\"}"
       r hmset r:3v details "{\"name\":\"3v_details\"}"
       r sadd cap a v c 3v
-      set expected {{{"name":"1b_details","blocked":false}} 1}
+      set expected {{{"id":"1b","blocked":false}} 1}
       assert_equal $expected [r vfind a_zset 0 10 10 desc noblocked 0 1 cap 0]
     }
 
@@ -181,7 +181,7 @@ start_server {tags {"vfind"}} {
       r zadd a_zset 1 1b 10 3v
       r hmset r:1b details "{\"name\":\"1b_details\"}" resource_id 3v
       r sadd cap a v c 3v
-      set expected {{{"name":"1b_details","blocked":false}} 1}
+      set expected {{{"id":"1b","blocked":false}} 1}
       assert_equal $expected [r vfind a_zset 0 10 10 desc noblocked 0 1 cap 0]
     }
 

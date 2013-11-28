@@ -97,7 +97,7 @@ robj *dupStringObject(robj *o) {
 robj *createListObject(void) {
     list *l = listCreate();
     robj *o = createObject(REDIS_LIST,l);
-    listSetFreeMethod(l,decrRefCount);
+    listSetFreeMethod(l,decrRefCountVoid);
     o->encoding = REDIS_ENCODING_LINKEDLIST;
     return o;
 }
@@ -215,9 +215,7 @@ void incrRefCount(robj *o) {
     o->refcount++;
 }
 
-void decrRefCount(void *obj) {
-    robj *o = obj;
-
+void decrRefCount(robj *o) {
     if (o->refcount <= 0) redisPanic("decrRefCount against refcount <= 0");
     if (o->refcount == 1) {
         switch(o->type) {
@@ -232,6 +230,13 @@ void decrRefCount(void *obj) {
     } else {
         o->refcount--;
     }
+}
+
+/* This variant of decrRefCount() gets its argument as void, and is useful
+ * as free method in data structures that expect a 'void free_object(void*)'
+ * prototype for the free method. */
+void decrRefCountVoid(void *o) {
+    decrRefCount(o);
 }
 
 /* This function set the ref count to zero without freeing the object.
@@ -348,35 +353,57 @@ robj *getDecodedObject(robj *o) {
     }
 }
 
-/* Compare two string objects via strcmp() or alike.
+/* Compare two string objects via strcmp() or strcoll() depending on flags.
  * Note that the objects may be integer-encoded. In such a case we
  * use ll2string() to get a string representation of the numbers on the stack
  * and compare the strings, it's much faster than calling getDecodedObject().
  *
- * Important note: if objects are not integer encoded, but binary-safe strings,
- * sdscmp() from sds.c will apply memcmp() so this function ca be considered
- * binary safe. */
-int compareStringObjects(robj *a, robj *b) {
+ * Important note: when REDIS_COMPARE_BINARY is used a binary-safe comparison
+ * is used. */
+
+#define REDIS_COMPARE_BINARY (1<<0)
+#define REDIS_COMPARE_COLL (1<<1)
+
+int compareStringObjectsWithFlags(robj *a, robj *b, int flags) {
     redisAssertWithInfo(NULL,a,a->type == REDIS_STRING && b->type == REDIS_STRING);
     char bufa[128], bufb[128], *astr, *bstr;
-    int bothsds = 1;
+    size_t alen, blen, minlen;
 
     if (a == b) return 0;
     if (a->encoding != REDIS_ENCODING_RAW) {
-        ll2string(bufa,sizeof(bufa),(long) a->ptr);
+        alen = ll2string(bufa,sizeof(bufa),(long) a->ptr);
         astr = bufa;
-        bothsds = 0;
     } else {
         astr = a->ptr;
+        alen = sdslen(astr);
     }
     if (b->encoding != REDIS_ENCODING_RAW) {
-        ll2string(bufb,sizeof(bufb),(long) b->ptr);
+        blen = ll2string(bufb,sizeof(bufb),(long) b->ptr);
         bstr = bufb;
-        bothsds = 0;
     } else {
         bstr = b->ptr;
+        blen = sdslen(bstr);
     }
-    return bothsds ? sdscmp(astr,bstr) : strcmp(astr,bstr);
+    if (flags & REDIS_COMPARE_COLL) {
+        return strcoll(astr,bstr);
+    } else {
+        int cmp;
+
+        minlen = (alen < blen) ? alen : blen;
+        cmp = memcmp(astr,bstr,minlen);
+        if (cmp == 0) return alen-blen;
+        return cmp;
+    }
+}
+
+/* Wrapper for compareStringObjectsWithFlags() using binary comparison. */
+int compareStringObjects(robj *a, robj *b) {
+    return compareStringObjectsWithFlags(a,b,REDIS_COMPARE_BINARY);
+}
+
+/* Wrapper for compareStringObjectsWithFlags() using collation. */
+int collateStringObjects(robj *a, robj *b) {
+    return compareStringObjectsWithFlags(a,b,REDIS_COMPARE_COLL);
 }
 
 /* Equal string objects return 1 if the two objects are the same from the
@@ -413,8 +440,12 @@ int getDoubleFromObject(robj *o, double *target) {
         if (o->encoding == REDIS_ENCODING_RAW) {
             errno = 0;
             value = strtod(o->ptr, &eptr);
-            if (isspace(((char*)o->ptr)[0]) || eptr[0] != '\0' ||
-                errno == ERANGE || isnan(value))
+            if (isspace(((char*)o->ptr)[0]) ||
+                eptr[0] != '\0' ||
+                (errno == ERANGE &&
+                    (value == HUGE_VAL || value == -HUGE_VAL || value == 0)) ||
+                errno == EINVAL ||
+                isnan(value))
                 return REDIS_ERR;
         } else if (o->encoding == REDIS_ENCODING_INT) {
             value = (long)o->ptr;

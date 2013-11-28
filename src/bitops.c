@@ -58,7 +58,7 @@ static int getBitOffsetFromArgument(redisClient *c, robj *o, size_t *offset) {
 /* Count number of bits set in the binary array pointed by 's' and long
  * 'count' bytes. The implementation of this function is required to
  * work with a input string length up to 512 MB. */
-size_t popcount(void *s, long count) {
+size_t redisPopcount(void *s, long count) {
     size_t bits = 0;
     unsigned char *p;
     uint32_t *p4 = s;
@@ -153,6 +153,7 @@ void setbitCommand(redisClient *c) {
     byteval |= ((on & 0x1) << bit);
     ((uint8_t*)o->ptr)[byte] = byteval;
     signalModifiedKey(c->db,c->argv[1]);
+    notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"setbit",c->argv[1],c->db->id);
     server.dirty++;
     addReply(c, bitval ? shared.cone : shared.czero);
 }
@@ -346,9 +347,11 @@ void bitopCommand(redisClient *c) {
     if (maxlen) {
         o = createObject(REDIS_STRING,res);
         setKey(c->db,targetkey,o);
+        notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"set",targetkey,c->db->id);
         decrRefCount(o);
     } else if (dbDelete(c->db,targetkey)) {
         signalModifiedKey(c->db,targetkey);
+        notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC,"del",targetkey,c->db->id);
     }
     server.dirty++;
     addReplyLongLong(c,maxlen); /* Return the output string length in bytes. */
@@ -404,6 +407,6 @@ void bitcountCommand(redisClient *c) {
     } else {
         long bytes = end-start+1;
 
-        addReplyLongLong(c,popcount(p+start,bytes));
+        addReplyLongLong(c,redisPopcount(p+start,bytes));
     }
 }
