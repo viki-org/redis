@@ -264,7 +264,7 @@ struct redisCommand redisCommandTable[] = {
     {"bitcount",bitcountCommand,-2,"r",0,NULL,1,1,1,0,0},
     {"vfind",vfindCommand,-10,"rm",0,vfindGetKeys,0,0,0,0,0},
     {"vsort",vsortCommand,-7,"rm",0,NULL,1,3,1,0,0},
-    {"vcontext",vcontextCommand,-6,"rm",0,NULL,0,0,0,0,0}
+    {"vcontext",vcontextCommand,-6,"rm",0,NULL,0,0,0,0,0},
     {"bitpos",bitposCommand,-3,"r",0,NULL,1,1,1,0,0},
     {"pfselftest",pfselftestCommand,1,"r",0,NULL,0,0,0,0,0},
     {"pfadd",pfaddCommand,-2,"wm",0,NULL,1,1,1,0,0},
