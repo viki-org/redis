@@ -166,14 +166,52 @@ int dbDelete(redisDb *db, robj *key) {
     }
 }
 
-long long emptyDb() {
+/* Prepare the string object stored at 'key' to be modified destructively
+ * to implement commands like SETBIT or APPEND.
+ *
+ * An object is usually ready to be modified unless one of the two conditions
+ * are true:
+ *
+ * 1) The object 'o' is shared (refcount > 1), we don't want to affect
+ *    other users.
+ * 2) The object encoding is not "RAW".
+ *
+ * If the object is found in one of the above conditions (or both) by the
+ * function, an unshared / not-encoded copy of the string object is stored
+ * at 'key' in the specified 'db'. Otherwise the object 'o' itself is
+ * returned.
+ *
+ * USAGE:
+ *
+ * The object 'o' is what the caller already obtained by looking up 'key'
+ * in 'db', the usage pattern looks like this:
+ *
+ * o = lookupKeyWrite(db,key);
+ * if (checkType(c,o,REDIS_STRING)) return;
+ * o = dbUnshareStringValue(db,key,o);
+ *
+ * At this point the caller is ready to modify the object, for example
+ * using an sdscat() call to append some data, or anything else.
+ */
+robj *dbUnshareStringValue(redisDb *db, robj *key, robj *o) {
+    redisAssert(o->type == REDIS_STRING);
+    if (o->refcount != 1 || o->encoding != REDIS_ENCODING_RAW) {
+        robj *decoded = getDecodedObject(o);
+        o = createStringObject(decoded->ptr, sdslen(decoded->ptr));
+        decrRefCount(decoded);
+        dbOverwrite(db,key,o);
+    }
+    return o;
+}
+
+long long emptyDb(void(callback)(void*)) {
     int j;
     long long removed = 0;
 
     for (j = 0; j < server.dbnum; j++) {
         removed += dictSize(server.db[j].dict);
-        dictEmpty(server.db[j].dict);
-        dictEmpty(server.db[j].expires);
+        dictEmpty(server.db[j].dict,callback);
+        dictEmpty(server.db[j].expires,callback);
     }
     return removed;
 }
@@ -209,14 +247,14 @@ void signalFlushedDb(int dbid) {
 void flushdbCommand(redisClient *c) {
     server.dirty += dictSize(c->db->dict);
     signalFlushedDb(c->db->id);
-    dictEmpty(c->db->dict);
-    dictEmpty(c->db->expires);
+    dictEmpty(c->db->dict,NULL);
+    dictEmpty(c->db->expires,NULL);
     addReply(c,shared.ok);
 }
 
 void flushallCommand(redisClient *c) {
     signalFlushedDb(-1);
-    server.dirty += emptyDb();
+    server.dirty += emptyDb(NULL);
     addReply(c,shared.ok);
     if (server.rdb_child_pid != -1) {
         kill(server.rdb_child_pid,SIGUSR1);
@@ -360,7 +398,7 @@ int parseScanCursorOrReply(redisClient *c, robj *o, unsigned long *cursor) {
 }
 
 /* This command implements SCAN, HSCAN and SSCAN commands.
- * If object 'o' is passed, then it must be an Hash or Set object, otherwise
+ * If object 'o' is passed, then it must be a Hash or Set object, otherwise
  * if 'o' is NULL the command will operate on the dictionary associated with
  * the current database.
  *
@@ -368,7 +406,7 @@ int parseScanCursorOrReply(redisClient *c, robj *o, unsigned long *cursor) {
  * the client arguments vector is a key so it skips it before iterating
  * in order to parse options.
  *
- * In the case of an Hash object the function returns both the field and value
+ * In the case of a Hash object the function returns both the field and value
  * of every element on the Hash. */
 void scanGenericCommand(redisClient *c, robj *o, unsigned long cursor) {
     int rv;
@@ -423,12 +461,12 @@ void scanGenericCommand(redisClient *c, robj *o, unsigned long cursor) {
     /* Step 2: Iterate the collection.
      *
      * Note that if the object is encoded with a ziplist, intset, or any other
-     * representation that is not an hash table, we are sure that it is also
+     * representation that is not a hash table, we are sure that it is also
      * composed of a small number of elements. So to avoid taking state we
      * just return everything inside the object in a single call, setting the
      * cursor to zero to signal the end of the iteration. */
 
-    /* Handle the case of an hash table. */
+    /* Handle the case of a hash table. */
     ht = NULL;
     if (o == NULL) {
         ht = c->db->dict;
@@ -510,7 +548,7 @@ void scanGenericCommand(redisClient *c, robj *o, unsigned long cursor) {
             listDelNode(keys, node);
         }
 
-        /* If this is an hash or a sorted set, we have a flat list of
+        /* If this is a hash or a sorted set, we have a flat list of
          * key-value elements, so if this element was filtered, remove the
          * value, or skip it if it was not filtered: we only match keys. */
         if (o && (o->type == REDIS_ZSET || o->type == REDIS_HASH)) {
@@ -595,11 +633,13 @@ void shutdownCommand(redisClient *c) {
             return;
         }
     }
-    /* SHUTDOWN can be called even while the server is in "loading" state.
-     * When this happens we need to make sure no attempt is performed to save
+    /* When SHUTDOWN is called while the server is loading a dataset in
+     * memory we need to make sure no attempt is performed to save
      * the dataset on shutdown (otherwise it could overwrite the current DB
-     * with half-read data). */
-    if (server.loading)
+     * with half-read data).
+     *
+     * Also when in Sentinel mode clear the SAVE flag and force NOSAVE. */
+    if (server.loading || server.sentinel_mode)
         flags = (flags & ~REDIS_SHUTDOWN_SAVE) | REDIS_SHUTDOWN_NOSAVE;
     if (prepareForShutdown(flags) == REDIS_OK) exit(0);
     addReplyError(c,"Errors trying to SHUTDOWN. Check logs.");
@@ -755,12 +795,20 @@ void propagateExpire(redisDb *db, robj *key) {
 }
 
 int expireIfNeeded(redisDb *db, robj *key) {
-    long long when = getExpire(db,key);
+    mstime_t when = getExpire(db,key);
+    mstime_t now;
 
     if (when < 0) return 0; /* No expire for this key */
 
     /* Don't expire anything while loading. It will be done later. */
     if (server.loading) return 0;
+
+    /* If we are in the context of a Lua script, we claim that time is
+     * blocked to when the Lua script started. This way a key can expire
+     * only the first time it is accessed and not in the middle of the
+     * script execution, making propagation to slaves / AOF consistent.
+     * See issue #1525 on Github for more information. */
+    now = server.lua_caller ? server.lua_time_start : mstime();
 
     /* If we are running in the context of a slave, return ASAP:
      * the slave key expiration is controlled by the master that will
@@ -769,12 +817,10 @@ int expireIfNeeded(redisDb *db, robj *key) {
      * Still we try to return the right information to the caller, 
      * that is, 0 if we think the key should be still valid, 1 if
      * we think the key is expired at this time. */
-    if (server.masterhost != NULL) {
-        return mstime() > when;
-    }
+    if (server.masterhost != NULL) return now > when;
 
     /* Return when this key has not expired */
-    if (mstime() <= when) return 0;
+    if (now <= when) return 0;
 
     /* Delete the key */
     server.stat_expiredkeys++;

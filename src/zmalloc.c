@@ -176,7 +176,7 @@ void *zrealloc(void *ptr, size_t size) {
 }
 
 /* Provide zmalloc_size() for systems where this function is not provided by
- * malloc itself, given that in that case we store an header with this
+ * malloc itself, given that in that case we store a header with this
  * information as the first bytes of every allocation. */
 #ifndef HAVE_MALLOC_SIZE
 size_t zmalloc_size(void *ptr) {
@@ -321,8 +321,8 @@ size_t zmalloc_get_rss(void) {
 #endif
 
 /* Fragmentation = RSS / allocated-bytes */
-float zmalloc_get_fragmentation_ratio(void) {
-    return (float)zmalloc_get_rss()/zmalloc_used_memory();
+float zmalloc_get_fragmentation_ratio(size_t rss) {
+    return (float)rss/zmalloc_used_memory();
 }
 
 #if defined(HAVE_PROC_SMAPS)

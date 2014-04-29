@@ -261,7 +261,7 @@ void debugCommand(redisClient *c) {
             addReply(c,shared.err);
             return;
         }
-        emptyDb();
+        emptyDb(NULL);
         if (rdbLoad(server.rdb_filename) != REDIS_OK) {
             addReplyError(c,"Error trying to load the RDB dump");
             return;
@@ -269,7 +269,7 @@ void debugCommand(redisClient *c) {
         redisLog(REDIS_WARNING,"DB reloaded by DEBUG RELOAD");
         addReply(c,shared.ok);
     } else if (!strcasecmp(c->argv[1]->ptr,"loadaof")) {
-        emptyDb();
+        emptyDb(NULL);
         if (loadAppendOnlyFile(server.aof_filename) != REDIS_OK) {
             addReply(c,shared.err);
             return;
@@ -363,11 +363,13 @@ void debugCommand(redisClient *c) {
     {
         server.active_expire_enabled = atoi(c->argv[2]->ptr);
         addReply(c,shared.ok);
-    } else if (!strcasecmp(c->argv[1]->ptr,"set-active-expire") &&
-               c->argc == 3)
-    {
-        server.active_expire_enabled = atoi(c->argv[2]->ptr);
-        addReply(c,shared.ok);
+    } else if (!strcasecmp(c->argv[1]->ptr,"error") && c->argc == 3) {
+        sds errstr = sdsnewlen("-",1);
+
+        errstr = sdscatsds(errstr,c->argv[2]->ptr);
+        errstr = sdsmapchars(errstr,"\n\r","  ",2); /* no newlines in errors. */
+        errstr = sdscatlen(errstr,"\r\n",2);
+        addReplySds(c,errstr);
     } else {
         addReplyErrorFormat(c, "Unknown DEBUG subcommand or wrong number of arguments for '%s'",
             (char*)c->argv[1]->ptr);

@@ -100,9 +100,7 @@ redisClient *createClient(int fd) {
     c->bpop.keys = dictCreate(&setDictType,NULL);
     c->bpop.timeout = 0;
     c->bpop.target = NULL;
-    c->io_keys = listCreate();
     c->watched_keys = listCreate();
-    listSetFreeMethod(c->io_keys,decrRefCountVoid);
     c->pubsub_channels = dictCreate(&setDictType,NULL);
     c->pubsub_patterns = listCreate();
     listSetFreeMethod(c->pubsub_patterns,decrRefCountVoid);
@@ -572,7 +570,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     REDIS_NOTUSED(privdata);
 
     cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);
-    if (cfd == AE_ERR) {
+    if (cfd == ANET_ERR) {
         redisLog(REDIS_WARNING,"Accepting client connection: %s", server.neterr);
         return;
     }
@@ -587,7 +585,7 @@ void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     REDIS_NOTUSED(privdata);
 
     cfd = anetUnixAccept(server.neterr, fd);
-    if (cfd == AE_ERR) {
+    if (cfd == ANET_ERR) {
         redisLog(REDIS_WARNING,"Accepting client connection: %s", server.neterr);
         return;
     }
@@ -639,24 +637,33 @@ void freeClient(redisClient *c) {
      *
      * Note that before doing this we make sure that the client is not in
      * some unexpected state, by checking its flags. */
-    if (server.master &&
-         (c->flags & REDIS_MASTER) &&
-        !(c->flags & (REDIS_CLOSE_AFTER_REPLY|
-                     REDIS_CLOSE_ASAP|
-                     REDIS_BLOCKED|
-                     REDIS_UNBLOCKED)))
-    {
-        replicationCacheMaster(c);
-        return;
+    if (server.master && c->flags & REDIS_MASTER) {
+        redisLog(REDIS_WARNING,"Connection with master lost.");
+        if (!(c->flags & (REDIS_CLOSE_AFTER_REPLY|
+                          REDIS_CLOSE_ASAP|
+                          REDIS_BLOCKED|
+                          REDIS_UNBLOCKED)))
+        {
+            replicationCacheMaster(c);
+            return;
+        }
     }
 
-    /* Note that if the client we are freeing is blocked into a blocking
-     * call, we have to set querybuf to NULL *before* to call
-     * unblockClientWaitingData() to avoid processInputBuffer() will get
-     * called. Also it is important to remove the file events after
-     * this, because this call adds the READABLE event. */
+    /* Log link disconnection with slave */
+    if ((c->flags & REDIS_SLAVE) && !(c->flags & REDIS_MONITOR)) {
+        char ip[REDIS_IP_STR_LEN];
+
+        if (anetPeerToString(c->fd,ip,sizeof(ip),NULL) != -1) {
+            redisLog(REDIS_WARNING,"Connection with slave %s:%d lost.",
+                ip, c->slave_listening_port);
+        }
+    }
+
+    /* Free the query buffer */
     sdsfree(c->querybuf);
     c->querybuf = NULL;
+
+    /* Deallocate structures used to block on blocking ops. */
     if (c->flags & REDIS_BLOCKED)
         unblockClientWaitingData(c);
     dictRelease(c->bpop.keys);
@@ -664,11 +671,13 @@ void freeClient(redisClient *c) {
     /* UNWATCH all the keys */
     unwatchAllKeys(c);
     listRelease(c->watched_keys);
+
     /* Unsubscribe from all the pubsub channels */
     pubsubUnsubscribeAllChannels(c,0);
     pubsubUnsubscribeAllPatterns(c,0);
     dictRelease(c->pubsub_channels);
     listRelease(c->pubsub_patterns);
+
     /* Close socket, unregister events, and remove list of replies and
      * accumulated arguments. */
     if (c->fd != -1) {
@@ -678,22 +687,24 @@ void freeClient(redisClient *c) {
     }
     listRelease(c->reply);
     freeClientArgv(c);
+
     /* Remove from the list of clients */
     if (c->fd != -1) {
         ln = listSearchKey(server.clients,c);
         redisAssert(ln != NULL);
         listDelNode(server.clients,ln);
     }
+
     /* When client was just unblocked because of a blocking operation,
-     * remove it from the list with unblocked clients. */
+     * remove it from the list of unblocked clients. */
     if (c->flags & REDIS_UNBLOCKED) {
         ln = listSearchKey(server.unblocked_clients,c);
         redisAssert(ln != NULL);
         listDelNode(server.unblocked_clients,ln);
     }
-    listRelease(c->io_keys);
-    /* Master/slave cleanup.
-     * Case 1: we lost the connection with a slave. */
+
+    /* Master/slave cleanup Case 1:
+     * we lost the connection with a slave. */
     if (c->flags & REDIS_SLAVE) {
         if (c->replstate == REDIS_REPL_SEND_BULK && c->repldbfd != -1)
             close(c->repldbfd);
@@ -709,7 +720,8 @@ void freeClient(redisClient *c) {
         refreshGoodSlavesCount();
     }
 
-    /* Case 2: we lost the connection with the master. */
+    /* Master/slave cleanup Case 2:
+     * we lost the connection with the master. */
     if (c->flags & REDIS_MASTER) replicationHandleMasterDisconnection();
 
     /* If this client was scheduled for async freeing we need to remove it
@@ -720,7 +732,8 @@ void freeClient(redisClient *c) {
         listDelNode(server.clients_to_close,ln);
     }
 
-    /* Release memory */
+    /* Release other dynamically allocated client structure fields,
+     * and finally release the client structure itself. */
     if (c->name) decrRefCount(c->name);
     zfree(c->argv);
     freeClientMultiState(c);
@@ -840,10 +853,13 @@ void resetClient(redisClient *c) {
 }
 
 int processInlineBuffer(redisClient *c) {
-    char *newline = strstr(c->querybuf,"\r\n");
+    char *newline;
     int argc, j;
     sds *argv, aux;
     size_t querylen;
+
+    /* Search for end of line */
+    newline = strchr(c->querybuf,'\n');
 
     /* Nothing to do without a \r\n */
     if (newline == NULL) {
@@ -854,11 +870,26 @@ int processInlineBuffer(redisClient *c) {
         return REDIS_ERR;
     }
 
+    /* Handle the \r\n case. */
+    if (newline && newline != c->querybuf && *(newline-1) == '\r')
+        newline--;
+
     /* Split the input buffer up to the \r\n */
     querylen = newline-(c->querybuf);
     aux = sdsnewlen(c->querybuf,querylen);
     argv = sdssplitargs(aux,&argc);
     sdsfree(aux);
+    if (argv == NULL) {
+        addReplyError(c,"Protocol error: unbalanced quotes in request");
+        setProtocolError(c,0);
+        return REDIS_ERR;
+    }
+
+    /* Newline from slaves can be used to refresh the last ACK time.
+     * This is useful for a slave to ping back while loading a big
+     * RDB file. */
+    if (querylen == 0 && c->flags & REDIS_SLAVE)
+        c->repl_ack_time = server.unixtime;
 
     /* Leave data after the first line of the query in the buffer */
     sdsrange(c->querybuf,querylen+2,-1);
@@ -1148,7 +1179,7 @@ void getClientsMaxBuffers(unsigned long *longest_output_list,
     *biggest_input_buffer = bib;
 }
 
-/* This is an helper function for getClientPeerId().
+/* This is a helper function for getClientPeerId().
  * It writes the specified ip/port to "peerid" as a null termiated string
  * in the form ip:port if ip does not contain ":" itself, otherwise
  * [ip]:port format is used (for IPv6 addresses basically). */
