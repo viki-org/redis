@@ -1458,14 +1458,11 @@ void adjustOpenFilesLimit(void) {
          * for our needs. */
         if (oldlimit < maxfiles) {
             rlim_t f;
-<<<<<<< HEAD
 
-=======
             int setrlimit_error = 0;
 
             /* Try to set the file limit to match 'maxfiles' or at least
              * to the higher value supported less than maxfiles. */
->>>>>>> 2.8.9
             f = maxfiles;
             while(f > oldlimit) {
                 int decr_step = 16;
