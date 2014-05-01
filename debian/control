@@ -1,0 +1,31 @@
+Source: redis
+Section: database
+Priority: optional
+Maintainer: Neerav Kumar <neerav@viki.com>
+Build-Depends: debhelper (>= 7.0.50), libjemalloc-dev [linux-any]
+Standards-Version: 3.9.4
+Homepage: http://redis.io/
+Vcs-Git: git://github.com/viki-org/red-s.git
+Vcs-Browser: https://github.com/viki-org/redis
+
+Package: redis-server
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, redis-tools (= ${binary:Version}), adduser
+Description: Persistent key-value database with network interface
+ Redis is a key-value database in a similar vein to memcache but the dataset
+ is non-volatile. Redis additionally provides native support for atomically
+ manipulating and querying data structures such as lists and sets.
+ .
+ The dataset is stored entirely in memory and periodically flushed to disk.
+
+Package: redis-tools
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Replaces: redis-server (<< 2:2.6.16-1)
+Breaks: redis-server (<< 2:2.6.16-1)
+Description: Persistent key-value database with network interface (client)
+ Redis is a key-value database in a similar vein to memcache but the dataset
+ is non-volatile. Redis additionally provides native support for atomically
+ manipulating and querying data structures such as lists and sets.
+ .
+ This package contains the command line client and other tools.
