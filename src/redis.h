@@ -239,10 +239,10 @@
 
 /* Client classes for client limits, currently used only for
  * the max-client-output-buffer limit implementation. */
-#define REDIS_CLIENT_LIMIT_CLASS_NORMAL 0
-#define REDIS_CLIENT_LIMIT_CLASS_SLAVE 1
-#define REDIS_CLIENT_LIMIT_CLASS_PUBSUB 2
-#define REDIS_CLIENT_LIMIT_NUM_CLASSES 3
+#define REDIS_CLIENT_TYPE_NORMAL 0 /* Normal req-reply clients + MONITORs */
+#define REDIS_CLIENT_TYPE_SLAVE 1  /* Slaves. */
+#define REDIS_CLIENT_TYPE_PUBSUB 2 /* Clients subscribed to PubSub channels. */
+#define REDIS_CLIENT_TYPE_COUNT 3
 
 /* Slave replication state - from the point of view of the slave. */
 #define REDIS_REPL_NONE 0 /* No active replication */
@@ -358,6 +358,9 @@
 #define REDIS_NOTIFY_EVICTED (1<<9)     /* e */
 #define REDIS_NOTIFY_ALL (REDIS_NOTIFY_GENERIC | REDIS_NOTIFY_STRING | REDIS_NOTIFY_LIST | REDIS_NOTIFY_SET | REDIS_NOTIFY_HASH | REDIS_NOTIFY_ZSET | REDIS_NOTIFY_EXPIRED | REDIS_NOTIFY_EVICTED)      /* A */
 
+/* Get the first bind addr or NULL */
+#define REDIS_BIND_ADDR (server.bindaddr_count ? server.bindaddr[0] : NULL)
+
 /* Using the following macro you can run code inside serverCron() with the
  * specified period, specified in milliseconds.
  * The actual resolution depends on server.hz. */
@@ -454,6 +457,7 @@ typedef struct readyList {
 /* With multiplexing we need to take per-client state.
  * Clients are taken in a liked list. */
 typedef struct redisClient {
+    uint64_t id;            /* Client incremental unique ID. */
     int fd;
     redisDb *db;
     int dictid;
@@ -489,6 +493,7 @@ typedef struct redisClient {
     list *watched_keys;     /* Keys WATCHED for MULTI/EXEC CAS */
     dict *pubsub_channels;  /* channels a client is interested in (SUBSCRIBE) */
     list *pubsub_patterns;  /* patterns a client is interested in (SUBSCRIBE) */
+    sds peerid;             /* Cached peer ID. */
 
     /* Response buffer */
     int bufpos;
@@ -543,7 +548,7 @@ typedef struct clientBufferLimitsConfig {
     time_t soft_limit_seconds;
 } clientBufferLimitsConfig;
 
-extern clientBufferLimitsConfig clientBufferLimitsDefaults[REDIS_CLIENT_LIMIT_NUM_CLASSES];
+extern clientBufferLimitsConfig clientBufferLimitsDefaults[REDIS_CLIENT_TYPE_COUNT];
 
 /* The redisOp structure defines a Redis Operation, that is an instance of
  * a command with an argument vector, database ID, propagation target
@@ -604,7 +609,8 @@ struct redisServer {
     list *clients_to_close;     /* Clients to close asynchronously */
     list *slaves, *monitors;    /* List of slaves and MONITORs */
     redisClient *current_client; /* Current client, only used on crash report */
-    char neterr[ANET_ERR_LEN];  /* Error buffer for anet.c */
+    char neterr[ANET_ERR_LEN];   /* Error buffer for anet.c */
+    uint64_t next_client_id;    /* Next client unique ID. Incremental. */
     /* RDB / AOF loading information */
     int loading;                /* We are loading data from disk if true */
     off_t loading_total_bytes;
@@ -647,7 +653,7 @@ struct redisServer {
     size_t client_max_querybuf_len; /* Limit for client query buffer length */
     int dbnum;                      /* Total number of configured DBs */
     int daemonize;                  /* True if running as a daemon */
-    clientBufferLimitsConfig client_obuf_limits[REDIS_CLIENT_LIMIT_NUM_CLASSES];
+    clientBufferLimitsConfig client_obuf_limits[REDIS_CLIENT_TYPE_COUNT];
     /* AOF persistence */
     int aof_state;                  /* REDIS_AOF_(ON|OFF|WAIT_REWRITE) */
     int aof_fsync;                  /* Kind of fsync() policy */
@@ -931,18 +937,20 @@ void *dupClientReplyValue(void *o);
 void getClientsMaxBuffers(unsigned long *longest_output_list,
                           unsigned long *biggest_input_buffer);
 void formatPeerId(char *peerid, size_t peerid_len, char *ip, int port);
-int getClientPeerId(redisClient *client, char *peerid, size_t peerid_len);
-sds getClientInfoString(redisClient *client);
+char *getClientPeerId(redisClient *client);
+sds catClientInfoString(sds s, redisClient *client);
 sds getAllClientsInfoString(void);
 void rewriteClientCommandVector(redisClient *c, int argc, ...);
 void rewriteClientCommandArgument(redisClient *c, int i, robj *newval);
 unsigned long getClientOutputBufferMemoryUsage(redisClient *c);
 void freeClientsInAsyncFreeQueue(void);
 void asyncCloseClientOnOutputBufferLimitReached(redisClient *c);
-int getClientLimitClassByName(char *name);
-char *getClientLimitClassName(int class);
+int getClientType(redisClient *c);
+int getClientTypeByName(char *name);
+char *getClientTypeName(int class);
 void flushSlavesOutputBuffers(void);
 void disconnectSlaves(void);
+int processEventsWhileBlocked(void);
 
 #ifdef __GNUC__
 void addReplyErrorFormat(redisClient *c, const char *fmt, ...)
@@ -970,6 +978,7 @@ void listTypeConvert(robj *subject, int enc);
 void unblockClientWaitingData(redisClient *c);
 void handleClientsBlockedOnLists(void);
 void popGenericCommand(redisClient *c, int where);
+void signalListAsReady(redisDb *db, robj *key);
 
 /* MULTI/EXEC/WATCH... */
 void unwatchAllKeys(redisClient *c);
@@ -1300,6 +1309,7 @@ void ttlCommand(redisClient *c);
 void pttlCommand(redisClient *c);
 void persistCommand(redisClient *c);
 void slaveofCommand(redisClient *c);
+void roleCommand(redisClient *c);
 void debugCommand(redisClient *c);
 void msetCommand(redisClient *c);
 void msetnxCommand(redisClient *c);
