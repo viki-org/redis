@@ -1,3 +1,9 @@
+redis (2:2.8.12) trusty; urgency=medium
+
+  * 2.8.12 
+
+ -- neeravkumar <me@nero.im>  Sun, 29 Jun 2014 21:55:22 +0800
+
 redis (2:2.8.9-viki) trusty; urgency=medium
 
   * Build from VIKI's sources
