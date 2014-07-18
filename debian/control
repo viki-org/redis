@@ -3,7 +3,7 @@ Section: database
 Priority: optional
 Maintainer: Neerav Kumar <neerav@viki.com>
 Build-Depends: debhelper (>= 7.0.50), libjemalloc-dev [linux-any]
-Standards-Version: 3.9.4
+Standards-Version: 3.9.5
 Homepage: http://redis.io/
 Vcs-Git: git://github.com/viki-org/red-s.git
 Vcs-Browser: https://github.com/viki-org/redis
