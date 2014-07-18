@@ -1,6 +1,12 @@
+redis (2:2.8.13) trusty; urgency=medium
+
+  * 2.8.13
+
+ -- neeravkumar <me@nero.im>  Fri, 18 Jul 2014 12:16:22 +0800
+
 redis (2:2.8.12) trusty; urgency=medium
 
-  * 2.8.12 
+  * 2.8.12
 
  -- neeravkumar <me@nero.im>  Sun, 29 Jun 2014 21:55:22 +0800
 
