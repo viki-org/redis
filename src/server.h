@@ -590,6 +590,7 @@ typedef struct redisObject {
                             * and most significant 16 bits access time). */
     int refcount;
     void *ptr;
+    int blocked;
 } robj;
 
 /* Macro used to initialize a Redis object allocated on the stack.
