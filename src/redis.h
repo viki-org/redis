@@ -415,6 +415,7 @@ typedef struct redisObject {
     unsigned lru:REDIS_LRU_BITS; /* lru time (relative to server.lruclock) */
     int refcount;
     void *ptr;
+    int blocked;
 } robj;
 
 /* Macro used to obtain the current LRU clock.
@@ -1532,6 +1533,11 @@ void pfcountCommand(redisClient *c);
 void pfmergeCommand(redisClient *c);
 void pfdebugCommand(redisClient *c);
 void latencyCommand(redisClient *c);
+int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags);
+void vfindCommand(redisClient *c);
+void vsortCommand(redisClient *c);
+int *vcontextGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags);
+void vcontextCommand(redisClient *c);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__ ((deprecated));
