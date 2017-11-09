@@ -590,7 +590,6 @@ typedef struct redisObject {
                             * and most significant 16 bits access time). */
     int refcount;
     void *ptr;
-    int blocked;
 } robj;
 
 /* Macro used to initialize a Redis object allocated on the stack.
@@ -2003,6 +2002,11 @@ void pfdebugCommand(client *c);
 void latencyCommand(client *c);
 void moduleCommand(client *c);
 void securityWarningCommand(client *c);
+
+int *vfindGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys);
+void vfindCommand(client *c);
+void vsortCommand(client *c);
+void vcontextCommand(client *c);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__ ((deprecated));
