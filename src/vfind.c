@@ -174,8 +174,8 @@ void vfindBySmallestFilter(client *c, vfindData *vfind) {
     sds item;
     zset *zset = vfind->zset;
     while ((setTypeNext(si, &item, &intobj)) != -1) {
-        dictEntry *de;
-        if ((de = dictFind(zset->dict, item)) == NULL) {
+        dictEntry *de = dictFind(zset->dict, item);
+        if (de == NULL) {
             continue;
         }
 
