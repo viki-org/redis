@@ -14,13 +14,11 @@ typedef struct {
     double score;
 } itemScore;
 
-void vsortByViews(client *c, vsortData *data);
+static void vsortByViews(client *c, vsortData *data);
 
-void vsortByNone(client *c, vsortData *data);
+static void vsortByNone(client *c, vsortData *data);
 
-double getScore(robj *zsetObj, robj *item);
-
-int itemScoreComparitor(const void *lhs, const void *rhs);
+static int itemScoreComparitor(const void *lhs, const void *rhs);
 
 // count zset allow_count [allows] block_count [blocks] resource_count [resources]
 void vsortCommand(client *c) {
@@ -61,7 +59,7 @@ void vsortCommand(client *c) {
     zfree(data);
 }
 
-void vsortByViews(client *c, vsortData *data) {
+static void vsortByViews(client *c, vsortData *data) {
     long allow_count = data->allow_count;
     long block_count = data->block_count;
     long count = data->count;
@@ -124,7 +122,7 @@ void vsortByViews(client *c, vsortData *data) {
     zfree(items);
 }
 
-void vsortByNone(client *c, vsortData *data) {
+static void vsortByNone(client *c, vsortData *data) {
     long allow_count = data->allow_count;
     long block_count = data->block_count;
     robj **allows = data->allows;
@@ -139,6 +137,6 @@ void vsortByNone(client *c, vsortData *data) {
     }
 }
 
-int itemScoreComparitor(const void *lhs, const void *rhs) {
+static int itemScoreComparitor(const void *lhs, const void *rhs) {
     return (*(itemScore *) rhs).score - (*(itemScore *) lhs).score;
 }

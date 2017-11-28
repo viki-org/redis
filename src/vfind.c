@@ -3,19 +3,17 @@
 
 typedef struct vfindData {
     int desc, found, added, include_blocked;
-    long allow_count, block_count, filter_count, offset, count, up_to;
+    long offset, count, up_to;
+    long allow_count, block_count, filter_count;
     robj **allows, **blocks, **filters;
-    zskiplistNode *ln;
     zset *zset;
 } vfindData;
 
-zskiplistNode *zslGetElementByRank(zskiplist *zsl, unsigned long rank);
+extern zskiplistNode *zslGetElementByRank(zskiplist *zsl, unsigned long rank);
 
 static void vfindByZSet(client *c, vfindData *vfind);
 
 static void vfindBySmallestFilter(client *c, vfindData *vfind);
-
-static void initializeZsetIterator(vfindData *data);
 
 int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys) {
     UNUSED(cmd);
@@ -110,10 +108,9 @@ void vfindCommand(client *c) {
     data->filter_count = filter_count;
     data->filters = NULL;
     if (filter_count != 0) {
-        data->filters = loadSetArrayIgnoreMiss(c, filter_offset + 1, &filter_count);
-        data->filter_count = filter_count;
-        if(data->filter_count == 0) {
-            // non existing filters
+        data->filters = loadSetArray(c, filter_offset + 1, filter_count);
+        if(data->filters == NULL) {
+            // some filter not exist
             goto reply;
         }
 
@@ -128,7 +125,6 @@ void vfindCommand(client *c) {
         }
     }
 
-    initializeZsetIterator(data);
     vfindByZSet(c, data);
 
 reply:
@@ -155,7 +151,7 @@ static void vfindZSetAdd(zset *s, sds ele, double score) {
 }
 
 // Used if the smallest filter has a small size compared to zset's size
-void vfindBySmallestFilter(client *c, vfindData *vfind) {
+static void vfindBySmallestFilter(client *c, vfindData *vfind) {
     zset *dstzset;
 
     int found = 0;
@@ -166,9 +162,12 @@ void vfindBySmallestFilter(client *c, vfindData *vfind) {
 
     robj *objSetBlocked = NULL;
     if(vfind->include_blocked) {
-        objSetBlocked = createSetObject();
+        objSetBlocked = createSetObject(); // set of objects that are blocked.
     }
 
+    /**
+     * (F1 ^ F2 ^ F3 - blocked) ^ ZS
+     */
     setTypeIterator *si = setTypeInitIterator(vfind->filters[0]);
     int64_t intobj;
     sds item;
@@ -199,6 +198,9 @@ void vfindBySmallestFilter(client *c, vfindData *vfind) {
 
     setTypeReleaseIterator(si);
 
+    /**
+     * Output with paging
+     */
     if (found > vfind->offset) {
         zskiplistNode *ln;
 
@@ -210,11 +212,8 @@ void vfindBySmallestFilter(client *c, vfindData *vfind) {
 
         while (added < found && added < vfind->count && ln != NULL) {
             int blocked = vfind->include_blocked ? setTypeIsMember(objSetBlocked, ln->ele) : 0;
-            if (replyWithDetail(c, ln->ele, blocked)) {
-                added++;
-            } else {
-                --found;
-            }
+            replyWithDetail(c, ln->ele, blocked);
+            added++;
 
             ln = vfind->desc? ln->backward : ln->level[0].forward;
         }
@@ -230,11 +229,14 @@ void vfindBySmallestFilter(client *c, vfindData *vfind) {
 }
 
 // Used if the smallest filter has a relatively big size compared to zset's size
-void vfindByZSet(client *c, vfindData *vfind) {
+static void vfindByZSet(client *c, vfindData *vfind) {
     int found = 0;
     int added = 0;
 
-    for (zskiplistNode *ln = vfind->ln; ln != NULL; ln = vfind->desc ? ln->backward : ln->level[0].forward) {
+    zskiplist *zsl = vfind->zset->zsl;
+    zskiplistNode *ln = vfind->desc ? zsl->tail : zsl->header->level[0].forward;
+
+    for (; ln != NULL; ln = vfind->desc ? ln->backward : ln->level[0].forward) {
         sds item = ln->ele;
 
         if (vfind->filter_count > 0 && !isMemberOfAllSets(vfind->filters, vfind->filter_count, item)) {
@@ -247,11 +249,8 @@ void vfindByZSet(client *c, vfindData *vfind) {
         }
 
         if (found++ >= vfind->offset && added < vfind->count) {
-            if (replyWithDetail(c, item, blocked)) {
-                added++;
-            } else {
-                --found;
-            }
+            replyWithDetail(c, item, blocked);
+            added++;
         }
 
         if (added == vfind->count && found >= vfind->up_to) {
@@ -261,10 +260,4 @@ void vfindByZSet(client *c, vfindData *vfind) {
 
     vfind->found = found;
     vfind->added = added;
-}
-
-static void initializeZsetIterator(vfindData *data) {
-    zskiplist *zsl;
-    zsl = data->zset->zsl;
-    data->ln = data->desc ? zsl->tail : zsl->header->level[0].forward;
 }
