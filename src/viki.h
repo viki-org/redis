@@ -15,4 +15,6 @@ int isMemberOfAnySet(robj **sets, long sets_count, sds ele);
 
 int isMemberOfAllSets(robj **sets, long sets_count, sds ele);
 
+int isSetsIntersect(robj *sa, robj *sb);
+
 #endif

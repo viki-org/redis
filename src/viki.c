@@ -84,6 +84,41 @@ int isMemberOfAllSets(robj **sets, long sets_count, sds ele) {
     return 1;
 }
 
+/**
+ * whether two sets has at least one common member or not
+ *
+ * @param sa
+ * @param sb
+ * @return
+ */
+int isSetsIntersect(robj *sa, robj *sb) {
+    if (sa == NULL || sb == NULL) return 0;
+
+    size_t la = setTypeSize(sa);
+    size_t lb = setTypeSize(sb);
+
+    if (la == 0 || lb == 0) return 0;
+    if (la > lb) {
+        robj *tmp = sa;
+        sa = sb;
+        sb = tmp;
+    }
+
+    setTypeIterator *si = setTypeInitIterator(sa);
+    sds ele;
+    int64_t intele;
+    while ((setTypeNext(si, &ele, &intele)) != -1) {
+        if (setTypeIsMember(sb, ele)) {
+            setTypeReleaseIterator(si);
+            return 1;
+        }
+    }
+
+    setTypeReleaseIterator(si);
+
+    return 0;
+}
+
 int isBlocked(long allow_count, robj **allows, long block_count, robj **blocks, sds ele) {
     if (block_count == 0) {
 	    return 0;
