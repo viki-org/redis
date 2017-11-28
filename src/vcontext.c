@@ -109,7 +109,10 @@ void vcontextWithOneFilter(client *c, vcontextData *data) {
 
     int64_t intele;
     while ((setTypeNext(si, &ele, &intele)) != -1) {
-        if (isBlocked(allow_count, allows, block_count, blocks, ele)) { continue; }
+        if (isBlocked(allow_count, allows, block_count, blocks, ele)) {
+            continue;
+        }
+
         indexNode *last = head;
         for (indexNode *n = head->next; n != NULL; n = n->next) {
             if (setTypeIsMember(n->index, ele)) {
@@ -141,13 +144,10 @@ cleanup:
 
 void vcontextWithFilters(client *c, vcontextData *data) {
     sds ele;
-    robj *index;
     long allow_count = data->allow_count;
     long block_count = data->block_count;
-    long index_offset = data->index_offset;
     robj **allows = data->allows;
     robj **blocks = data->blocks;
-    robj **indexes = data->indices;
 
     qsort(data->filters, data->filter_count, sizeof(robj * ), qsortCompareSetsByCardinality);
 
@@ -160,14 +160,15 @@ void vcontextWithFilters(client *c, vcontextData *data) {
     setTypeIterator *si = setTypeInitIterator(filters[0]);
     int64_t intele;
     while ((setTypeNext(si, &ele, &intele)) != -1) {
-        for (int j = 1; j < data->filter_count; ++j) {
-            if (!setTypeIsMember(filters[j], ele)) { goto next; }
+        if(data->filter_count > 1 && !isMemberOfAllSets(&data->filters[1], data->filter_count - 1, ele))  {
+            continue;
         }
-        if (!isBlocked(allow_count, allows, block_count, blocks, ele)) {
-            setTypeAdd(dstobj, ele);
+
+        if (isBlocked(allow_count, allows, block_count, blocks, ele)) {
+            continue;
         }
-    next:
-        ele = NULL;
+
+        setTypeAdd(dstobj, ele);
     }
     setTypeReleaseIterator(si);
 
@@ -175,18 +176,14 @@ void vcontextWithFilters(client *c, vcontextData *data) {
      * index[0] ^ set + index[1] ^ set + ...
      */
     for (int i = 0; i < data->index_count; ++i) {
-        index = indexes[i];
-        if (index == NULL) { continue; }
-
-        si = setTypeInitIterator(data->indices[i]);
-        while ((setTypeNext(si, &ele, &intele)) != -1) {
-            if (setTypeIsMember(dstobj, ele)) {
-                ++(data->added);
-                addReplyBulk(c, c->argv[i + index_offset + 1]);
-                break;
-            }
+        if (data->indices[i] == NULL) {
+            continue;
         }
-        setTypeReleaseIterator(si);
+
+        if(isSetsIntersect(dstobj, data->indices[i])) {
+            ++(data->added);
+            addReplyBulk(c, c->argv[i + data->index_offset + 1]);
+        }
     }
 
     decrRefCount(dstobj);
@@ -200,11 +197,13 @@ void vcontextWithoutFilters(client *c, vcontextData *data) {
         int64_t intele;
         sds ele;
         while ((setTypeNext(si, &ele, &intele)) != -1) {
-            if (!isBlocked(data->allow_count, data->allows, data->block_count, data->blocks, ele)) {
-                ++(data->added);
-                addReplyBulk(c, c->argv[i + data->index_offset + 1]);
-                break;
+            if (isBlocked(data->allow_count, data->allows, data->block_count, data->blocks, ele)) {
+                continue;
             }
+
+            ++(data->added);
+            addReplyBulk(c, c->argv[i + data->index_offset + 1]);
+            break;
         }
         setTypeReleaseIterator(si);
     }
