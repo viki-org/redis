@@ -2,25 +2,20 @@
 #include "viki.h"
 
 typedef struct vcontextData {
-    int added;
-    long allow_count, block_count, index_count, filter_count, index_offset;
+    long index_offset;
+    long allow_count, block_count, index_count, filter_count;
     robj **indices;
     robj **allows;
     robj **blocks;
     robj **filters;
+    int added;
 } vcontextData;
 
-typedef struct indexNode {
-    int i;
-    robj *index;
-    struct indexNode *next;
-} indexNode;
+static void vcontextWithFilters(client *c, vcontextData *data);
 
-void vcontextWithFilters(client *c, vcontextData *data);
+static void vcontextWithOneFilter(client *c, vcontextData *data);
 
-void vcontextWithOneFilter(client *c, vcontextData *data);
-
-void vcontextWithoutFilters(client *c, vcontextData *data);
+static void vcontextWithoutFilters(client *c, vcontextData *data);
 
 // vcontext allow_count [allows] block_count [blocks] filter_count [filters] index_count [indexes]
 void vcontextCommand(client *c) {
@@ -81,90 +76,60 @@ reply:
     zfree(data);
 }
 
-void vcontextWithOneFilter(client *c, vcontextData *data) {
-    sds ele;
-    long allow_count = data->allow_count;
-    long block_count = data->block_count;
-    long index_offset = data->index_offset;
-    robj **allows = data->allows;
-    robj **blocks = data->blocks;
-    robj **indexes = data->indices;
-
+static void vcontextWithOneFilter(client *c, vcontextData *data) {
     robj *filter = data->filters[0];
-
-    setTypeIterator *si = setTypeInitIterator(filter);
-
-    indexNode *head = zmalloc(sizeof(indexNode));
-    head->i = -1;
-    indexNode *last = head;
-    for (int i = 0; i < data->index_count; ++i) {
-        if (indexes[i] == NULL) { continue; }
-        indexNode *node = zmalloc(sizeof(indexNode));
-        node->i = i;
-        node->index = indexes[i];
-        last->next = node;
-        last = node;
-    }
-    last->next = NULL;
-
-    int64_t intele;
-    while ((setTypeNext(si, &ele, &intele)) != -1) {
-        if (isBlocked(allow_count, allows, block_count, blocks, ele)) {
+    size_t filter_size = setTypeSize(filter);
+    for(int i = 0; i < data->index_count; ++i) {
+        if (data->indices[i] == NULL) {
             continue;
         }
 
-        indexNode *last = head;
-        for (indexNode *n = head->next; n != NULL; n = n->next) {
-            if (setTypeIsMember(n->index, ele)) {
-                ++(data->added);
-                addReplyBulk(c, c->argv[n->i + index_offset + 1]);
-                last->next = n->next;
-                zfree(n);
-                if (head->next == NULL) { goto cleanup; }
-            } else {
-                last = n;
+        robj *sa = filter;
+        robj *sb = data->indices[i];
+        size_t index_size = setTypeSize(sb);
+        if (filter_size > index_size) {
+            robj *tmp = sa;
+            sa = sb;
+            sb = tmp;
+        }
+
+        setTypeIterator *si = setTypeInitIterator(sa);
+        sds ele;
+        int64_t intele;
+        while ((setTypeNext(si, &ele, &intele)) != -1) {
+            if (!setTypeIsMember(sb, ele)) {
+                continue;
             }
+
+            if (isBlocked(data->allow_count, data->allows, data->block_count, data->blocks, ele)) {
+                continue;
+            }
+
+            addReplyBulk(c, c->argv[i + data->index_offset + 1]);
+            data->added++;
+            break;
         }
+
+        setTypeReleaseIterator(si);
     }
-
-cleanup:
-
-    {
-        indexNode *n = head;
-        while (1) {
-            if (n == NULL) { break; }
-            indexNode *curr = n;
-            n = curr->next;
-            zfree(curr);
-        }
-    }
-
-    setTypeReleaseIterator(si);
 }
 
-void vcontextWithFilters(client *c, vcontextData *data) {
-    sds ele;
-    long allow_count = data->allow_count;
-    long block_count = data->block_count;
-    robj **allows = data->allows;
-    robj **blocks = data->blocks;
-
-    qsort(data->filters, data->filter_count, sizeof(robj * ), qsortCompareSetsByCardinality);
-
-    robj **filters = data->filters;
-    robj *dstobj = createSetObject();
-
+static void vcontextWithFilters(client *c, vcontextData *data) {
     /**
      * filter ^ filter[1:n] ^ allows - blocks
      */
-    setTypeIterator *si = setTypeInitIterator(filters[0]);
+    qsort(data->filters, data->filter_count, sizeof(robj * ), qsortCompareSetsByCardinality);
+
+    setTypeIterator *si = setTypeInitIterator(data->filters[0]);
     int64_t intele;
+    sds ele;
+    robj *dstobj = createSetObject();
     while ((setTypeNext(si, &ele, &intele)) != -1) {
         if(data->filter_count > 1 && !isMemberOfAllSets(&data->filters[1], data->filter_count - 1, ele))  {
             continue;
         }
 
-        if (isBlocked(allow_count, allows, block_count, blocks, ele)) {
+        if (isBlocked(data->allow_count, data->allows, data->block_count, data->blocks, ele)) {
             continue;
         }
 
@@ -181,15 +146,15 @@ void vcontextWithFilters(client *c, vcontextData *data) {
         }
 
         if(isSetsIntersect(dstobj, data->indices[i])) {
-            ++(data->added);
             addReplyBulk(c, c->argv[i + data->index_offset + 1]);
+            data->added++;
         }
     }
 
     decrRefCount(dstobj);
 }
 
-void vcontextWithoutFilters(client *c, vcontextData *data) {
+static void vcontextWithoutFilters(client *c, vcontextData *data) {
     for (int i = 0; i < data->index_count; ++i) {
         if (data->indices[i] == NULL) { continue; }
 
@@ -201,8 +166,8 @@ void vcontextWithoutFilters(client *c, vcontextData *data) {
                 continue;
             }
 
-            ++(data->added);
             addReplyBulk(c, c->argv[i + data->index_offset + 1]);
+            data->added++;
             break;
         }
         setTypeReleaseIterator(si);

@@ -77,6 +77,12 @@ start_server {tags {"vfind"}} {
       assert_equal {0} [r vfind zset 0 10 11 asc noblocked 0 1 cap 1 filter2]
     }
 
+    test "vfind filter all with multiple filters with a non existing filter - $encoding" {
+      setup_data
+      r sadd cap a
+      assert_equal {0} [r vfind zset 0 10 11 asc noblocked 0 1 cap 2 filter1 filter2]
+    }
+
     test "vfind filter all with a highly restrictive filter - $encoding" {
       setup_data
       r sadd filter2 z
