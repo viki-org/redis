@@ -26,7 +26,7 @@ customize_redis_conf /etc/redis/redis.conf
 
 cat > /run.sh << "EOF"
 #!/bin/bash
-if [ ! -f /.redis_mode_set ]; then
+if [ ! -f /var/lib/redis/.redis_mode_set ]; then
 	/set_redis_mode.sh
 fi
 exec /usr/bin/redis-server /etc/redis/redis.conf
@@ -38,13 +38,14 @@ command=/run.sh
 pidfile=/var/log/redis/redis.pid
 stdout_logfile=/var/log/supervisor/%(program_name)s.log
 stderr_logfile=/var/log/supervisor/%(program_name)s.log
+user=redis
 EOF
 
 
 cat > /set_redis_mode.sh << "EOF"
 #!/bin/bash
 
-if [ -f /.redis_mode_set ]; then
+if [ -f /var/lib/redis/.redis_mode_set ]; then
 	echo "Redis mode already set!"
 	exit 0
 fi
@@ -63,7 +64,7 @@ if [ -n "$REDIS_MODE" ]; then
 	fi
 fi
 
-touch /.redis_mode_set
+touch /var/lib/redis/.redis_mode_set
 EOF
 
 chmod 755 /*.sh

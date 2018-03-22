@@ -18,5 +18,10 @@ ADD deploy/redis-server.logrotate /etc/logrotate.d/redis-server
 RUN make -j 4 && make PREFIX=/usr/ install && strip /usr/bin/redis*
 RUN /redis/setup.sh
 
-CMD ["/usr/bin/supervisord", "-n"]
-EXPOSE 6379
+RUN adduser --disabled-password --gecos '' redis
+
+COPY entrypoint.sh /sbin/entrypoint.sh
+RUN chmod 755 /sbin/entrypoint.sh
+
+EXPOSE 6379/tcp
+ENTRYPOINT ["/sbin/entrypoint.sh"]
