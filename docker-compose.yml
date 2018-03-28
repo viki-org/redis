@@ -3,4 +3,4 @@ version: '2'
 services:
   man:
     build: .
-    image: viki/redis:4.0.6-nc2
+    image: viki/redis:4.0.6-nc3

@@ -24,23 +24,14 @@ customize_redis_conf() {
 
 customize_redis_conf /etc/redis/redis.conf
 
-cat > /run.sh << "EOF"
-#!/bin/bash
-if [ ! -f /var/lib/redis/.redis_mode_set ]; then
-	/set_redis_mode.sh
-fi
-exec /usr/bin/redis-server /etc/redis/redis.conf
-EOF
-
 cat > /etc/supervisor/conf.d/redis.conf << "EOF"
 [program:redis]
-command=/run.sh
+command=/usr/bin/redis-server /etc/redis/redis.conf
 pidfile=/var/log/redis/redis.pid
 stdout_logfile=/var/log/supervisor/%(program_name)s.log
 stderr_logfile=/var/log/supervisor/%(program_name)s.log
 user=redis
 EOF
-
 
 cat > /set_redis_mode.sh << "EOF"
 #!/bin/bash
