@@ -50,6 +50,14 @@ if [ -n "$REDIS_MODE" ]; then
 	elif [ "$REDIS_MODE" == "CACHE" ]; then
 		echo "=> Configuring redis as cache"
 		sed -ri "s/(^save.*)/#\1/g" /etc/redis/redis.conf
+		if ! [ -z $REDIS_MAXMEMORY ]; then
+			echo "maxmemory $REDIS_MAXMEMORY" >> /etc/redis/redis.conf
+			if ! [ -z $REDIS_MAXMEMORY_POLICY ]; then
+				echo "maxmemory-policy $REDIS_MAXMEMORY_POLICY" >> /etc/redis/redis.conf
+			else
+				echo "maxmemory-policy volatile-ttl" >> /etc/redis/redis.conf
+			fi
+		fi
 	else
 		echo "=> Unknown $REDIS_MODE mode - ignoring"
 	fi
