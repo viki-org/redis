@@ -1,4 +1,4 @@
-FROM viki/base:latest
+FROM gcr.io/viki-images/base:arm-latest
 MAINTAINER platform-dev@viki.com
 
 ENV DEBIAN_FRONTEND noninteractive

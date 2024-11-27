@@ -3,4 +3,4 @@ version: '2'
 services:
   man:
     build: .
-    image: viki/redis:4.0.6
+    image: gcr.io/viki-images/redis:4.0.6-arm
