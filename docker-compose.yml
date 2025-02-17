@@ -1,6 +1,16 @@
-version: '2'
-
+version: "3"
 services:
-  man:
-    build: .
-    image: viki/redis:4.0.12
+  redis:
+    image: myredis
+    user: root
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: nc -z 127.0.0.1 6379
+      interval: 1s
+      timeout: 2s
+      retries: 1
+    command:
+      - /bin/sh
+      - -c
+      - cd ./src && ls -a | ./redis-server --protected-mode no
