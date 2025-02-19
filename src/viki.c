@@ -4,37 +4,58 @@
 // export internal method to speed up output.
 extern void addReplyLongLongWithPrefix(client *c, long long ll, char prefix);
 
-int replyWithDetail(client *c, sds item, int blocked) {
+#define ID_PREFIX_LENGTH 7
+#define BLOCKED_TRUE_SUFFIX_LENGTH 17
+#define BLOCKED_FALSE_SUFFIX_LENGTH 18
+
+int replyWithDetail(client *c, sds item, int blocked)
+{
     size_t id_length = sdslen(item);
-    size_t len = 7 + id_length + (blocked? 17 : 18);
+    size_t len = ID_PREFIX_LENGTH + id_length + (blocked ? BLOCKED_TRUE_SUFFIX_LENGTH : BLOCKED_FALSE_SUFFIX_LENGTH);
 
     addReplyLongLongWithPrefix(c, len, '$');
 
-    addReplyString(c,"{\"id\":\"", 7);
+    addReplyString(c, "{\"id\":\"", ID_PREFIX_LENGTH);
     addReplyString(c, item, id_length);
-    if(blocked) {
-        addReplyString(c, "\",\"blocked\":true}", 17);
-    } else {
-        addReplyString(c, "\",\"blocked\":false}", 18);
+    if (blocked)
+    {
+        addReplyString(c, "\",\"blocked\":true}", BLOCKED_TRUE_SUFFIX_LENGTH);
+    }
+    else
+    {
+        addReplyString(c, "\",\"blocked\":false}", BLOCKED_FALSE_SUFFIX_LENGTH);
     }
 
-    addReply(c,shared.crlf);
+    addReply(c, shared.crlf);
 
     return 1;
 }
 
-robj **loadSetArrayIgnoreMiss(client *c, int offset, long *count) {
+/**
+ * Returns an array of robj pointers representing sets from the client's database,
+ * Ignores any misses and updates the count to reflect the number of successfully loaded sets.
+ * If the initial count is zero, the function returns NULL.
+ */
+robj **loadSetArrayIgnoreMiss(client *c, int offset, long *count)
+{
     long total = *count;
-    if (total == 0) { return NULL; }
+    if (total == 0)
+    {
+        return NULL;
+    }
 
     long misses = 0;
-    robj **array = zmalloc(sizeof(robj * ) * total);
-    for (int i = 0; i < total; ++i) {
+    robj **array = zmalloc(sizeof(robj *) * total);
+    for (int i = 0; i < total; ++i)
+    {
         robj *set;
 
-        if (((set = lookupKeyRead(c->db, c->argv[i + offset])) == NULL) || set->type != OBJ_SET) {
+        if (((set = lookupKeyRead(c->db, c->argv[i + offset])) == NULL) || set->type != OBJ_SET)
+        {
             ++misses;
-        } else {
+        }
+        else
+        {
             array[i - misses] = set;
         }
     }
@@ -43,16 +64,24 @@ robj **loadSetArrayIgnoreMiss(client *c, int offset, long *count) {
     return array;
 }
 
-robj **loadSetArray(client *c, int offset, long count) {
-    if (count == 0) { return NULL; }
+robj **loadSetArray(client *c, int offset, long count)
+{
+    if (count == 0)
+    {
+        return NULL;
+    }
 
-    robj **array = zmalloc(sizeof(robj * ) * count);
-    for (int i = 0; i < count; ++i) {
+    robj **array = zmalloc(sizeof(robj *) * count);
+    for (int i = 0; i < count; ++i)
+    {
         robj *set;
 
-        if (((set = lookupKeyRead(c->db, c->argv[i + offset])) == NULL) || set->type != OBJ_SET) {
+        if (((set = lookupKeyRead(c->db, c->argv[i + offset])) == NULL) || set->type != OBJ_SET)
+        {
             goto miss;
-        } else {
+        }
+        else
+        {
             array[i] = set;
         }
     }
@@ -64,9 +93,12 @@ miss:
     return NULL;
 }
 
-int isMemberOfAnySet(robj **sets, long sets_count, sds ele) {
-    for (int i = 0; i < sets_count; ++i) {
-        if (setTypeIsMember(sets[i], ele)) {
+int isMemberOfAnySet(robj **sets, long sets_count, sds ele)
+{
+    for (int i = 0; i < sets_count; ++i)
+    {
+        if (setTypeIsMember(sets[i], ele))
+        {
             return 1;
         }
     }
@@ -74,9 +106,12 @@ int isMemberOfAnySet(robj **sets, long sets_count, sds ele) {
     return 0;
 }
 
-int isMemberOfAllSets(robj **sets, long sets_count, sds ele) {
-    for (int i = 0; i < sets_count; ++i) {
-        if (!setTypeIsMember(sets[i], ele)) {
+int isMemberOfAllSets(robj **sets, long sets_count, sds ele)
+{
+    for (int i = 0; i < sets_count; ++i)
+    {
+        if (!setTypeIsMember(sets[i], ele))
+        {
             return 0;
         }
     }
@@ -91,14 +126,18 @@ int isMemberOfAllSets(robj **sets, long sets_count, sds ele) {
  * @param sb
  * @return
  */
-int isSetsIntersect(robj *sa, robj *sb) {
-    if (sa == NULL || sb == NULL) return 0;
+int isSetsIntersect(robj *sa, robj *sb)
+{
+    if (sa == NULL || sb == NULL)
+        return 0;
 
     size_t la = setTypeSize(sa);
     size_t lb = setTypeSize(sb);
 
-    if (la == 0 || lb == 0) return 0;
-    if (la > lb) {
+    if (la == 0 || lb == 0)
+        return 0;
+    if (la > lb)
+    {
         robj *tmp = sa;
         sa = sb;
         sb = tmp;
@@ -107,8 +146,10 @@ int isSetsIntersect(robj *sa, robj *sb) {
     setTypeIterator *si = setTypeInitIterator(sa);
     sds ele;
     int64_t intele;
-    while ((setTypeNext(si, &ele, &intele)) != -1) {
-        if (setTypeIsMember(sb, ele)) {
+    while ((setTypeNext(si, &ele, &intele)) != -1)
+    {
+        if (setTypeIsMember(sb, ele))
+        {
             setTypeReleaseIterator(si);
             return 1;
         }
@@ -119,16 +160,20 @@ int isSetsIntersect(robj *sa, robj *sb) {
     return 0;
 }
 
-int isBlocked(long allow_count, robj **allows, long block_count, robj **blocks, sds ele) {
-    if (block_count == 0) {
-	    return 0;
-    }
-
-    if (isMemberOfAnySet(allows, allow_count, ele)) {
+int isBlocked(long allow_count, robj **allows, long block_count, robj **blocks, sds ele)
+{
+    if (block_count == 0)
+    {
         return 0;
     }
 
-    if (isMemberOfAnySet(blocks, block_count, ele)) {
+    if (isMemberOfAnySet(allows, allow_count, ele))
+    {
+        return 0;
+    }
+
+    if (isMemberOfAnySet(blocks, block_count, ele))
+    {
         return 1;
     }
 

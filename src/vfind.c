@@ -2,7 +2,7 @@
 #include "viki.h"
 
 // Constants for argument indices
-#define ZSET_ARG_INDEX 1
+#define ZSET_KEY_ARG_INDEX 1
 #define OFFSET_ARG_INDEX 2
 #define COUNT_ARG_INDEX 3
 #define UPTO_ARG_INDEX 4
@@ -13,10 +13,13 @@
 #define FILTER_COUNT_ARG_INDEX 9
 #define MIN_ARG_COUNT 10
 
+/*
+This is the input data for vfind
+*/
 typedef struct vfindData
 {
     int desc, found, added, include_blocked;
-    long offset, count, up_to; // offsets for pagination?
+    long offset, count, up_to; // offsets for pagination
     long allow_count, block_count, filter_count;
     robj **allows, **blocks, **filters; // pointers to allow block and filter sets
     zset *zset;
@@ -57,7 +60,7 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys)
     int *keys = zmalloc(sizeof(int) * total_keys);
 
     // set zset key position
-    keys[0] = ZSET_ARG_INDEX;
+    keys[0] = ZSET_KEY_ARG_INDEX;
 
     int offset = 1;
 
@@ -78,20 +81,23 @@ int *vfindGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys)
     return keys;
 }
 
-// Prepares all the sets and calls vfindBySmallestFilter or vfindByZSet
-// depending on the ratio of the input set and the smallest filter set
-// Syntax:
-// vfind zset offset count upto direction include_blocked allow_count [allows] block_count [blocks] filter_count [filter keys]
+/**
+ * Prepares all the sets and calls vfindBySmallestFilter or vfindByZSet
+ * depending on the ratio of the input set and the smallest filter set
+ * Syntax: vfind zset offset count upto direction include_blocked allow_count [allows] block_count [blocks] filter_count [filter keys]
+ * @param c
+ */
 void vfindCommand(client *c)
 {
     long allow_count, block_count, block_offset, filter_count, filter_offset;
-    void *replylen;
-    long offset, count, up_to;
-    robj *items, *direction, *include_blocked;
-    vfindData *data;
+    void *replylen;                            // length of reply constructed
+    long offset, count, up_to;                 // pagination params
+    robj *items, *direction, *include_blocked; // items is pointer to redis obj representing zset being queried
+    vfindData *data;                           // vfind input data struct
 
-    // All the data checks
-    if ((items = lookupKeyRead(c->db, c->argv[1])) == NULL)
+    /* All the data checks */
+    // look up the zset specificed
+    if ((items = lookupKeyRead(c->db, c->argv[ZSET_KEY_ARG_INDEX])) == NULL)
     {
         addReplyMultiBulkLen(c, 1);
         addReplyLongLong(c, 0);
@@ -101,31 +107,31 @@ void vfindCommand(client *c)
     {
         return;
     }
-    if ((getLongFromObjectOrReply(c, c->argv[2], &offset, NULL) != C_OK))
+    if ((getLongFromObjectOrReply(c, c->argv[OFFSET_ARG_INDEX], &offset, NULL) != C_OK))
     {
         return;
     }
-    if ((getLongFromObjectOrReply(c, c->argv[3], &count, NULL) != C_OK))
+    if ((getLongFromObjectOrReply(c, c->argv[COUNT_ARG_INDEX], &count, NULL) != C_OK))
     {
         return;
     }
-    if ((getLongFromObjectOrReply(c, c->argv[4], &up_to, NULL) != C_OK))
+    if ((getLongFromObjectOrReply(c, c->argv[UPTO_ARG_INDEX], &up_to, NULL) != C_OK))
     {
         return;
     }
-    direction = c->argv[5];
-    include_blocked = c->argv[6];
+    direction = c->argv[DIRECTION_ARG_INDEX];
+    include_blocked = c->argv[INCLUDE_BLOCKED_ARG_INDEX];
 
-    if ((getLongFromObjectOrReply(c, c->argv[7], &allow_count, NULL) != C_OK))
+    if ((getLongFromObjectOrReply(c, c->argv[ALLOW_COUNT_ARG_INDEX], &allow_count, NULL) != C_OK))
     {
         return;
     }
-    block_offset = 8 + allow_count;
+    block_offset = BLOCK_COUNT_ARG_INDEX + allow_count;
     if ((getLongFromObjectOrReply(c, c->argv[block_offset], &block_count, NULL) != C_OK))
     {
         return;
     }
-    filter_offset = 9 + allow_count + block_count;
+    filter_offset = FILTER_COUNT_ARG_INDEX + allow_count + block_count;
     if ((getLongFromObjectOrReply(c, c->argv[filter_offset], &filter_count, NULL) != C_OK))
     {
         return;
@@ -143,6 +149,7 @@ void vfindCommand(client *c)
 
     replylen = addDeferredMultiBulkLength(c);
 
+    // zsets are either a ziplist or a skiplist, we will code against skiplist specific impl
     zsetConvert(items, OBJ_ENCODING_SKIPLIST);
     data->zset = items->ptr;
 
@@ -156,7 +163,7 @@ void vfindCommand(client *c)
         data->include_blocked = 1;
     }
 
-    data->allows = loadSetArrayIgnoreMiss(c, 8, &allow_count);
+    data->allows = loadSetArrayIgnoreMiss(c, ALLOW_COUNT_ARG_INDEX + 1, &allow_count);
     data->allow_count = allow_count;
 
     data->blocks = loadSetArrayIgnoreMiss(c, block_offset + 1, &block_count);
@@ -207,7 +214,7 @@ reply:
 }
 
 /**
- * Add element to zset without check its existence to get better performance.
+ * Add element to zset without checking its existence to get better performance.
  *
  * @param s
  * @param ele
