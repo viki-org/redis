@@ -171,16 +171,18 @@ void vfindCommand(client *c)
 
     data->filter_count = filter_count;
     data->filters = NULL;
+
     if (filter_count != 0)
     {
         data->filters = loadSetArray(c, filter_offset + 1, filter_count);
         if (data->filters == NULL)
         {
-            // some filter not exist
+            // no filters exists
             goto reply;
         }
 
         qsort(data->filters, filter_count, sizeof(robj *), qsortCompareSetsByCardinality);
+
         // Size of smallest filter
         int size = setTypeSize(data->filters[0]);
         int ratio = zsetLength(items) / size;
