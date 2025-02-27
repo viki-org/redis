@@ -19,7 +19,7 @@ This is the input data for vfind
 typedef struct vfindData
 {
     int desc, found, added, include_blocked;
-    long offset, count, up_to; // offsets for pagination
+    long offset, count, up_to;
     long allow_count, block_count, filter_count;
     robj **allows, **blocks, **filters; // pointers to allow block and filter sets
     zset *zset;
@@ -255,6 +255,7 @@ static void vfindBySmallestFilter(client *c, vfindData *vfind)
     zset *zset = vfind->zset;
     while ((setTypeNext(si, &item, &intobj)) != -1)
     {
+        // check if element exists in the zset
         dictEntry *de = dictFind(zset->dict, item);
         if (de == NULL)
         {
