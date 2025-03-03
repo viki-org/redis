@@ -1,8 +1,10 @@
+#!lua name=vfind
+
 -- @desc: Retrieves a range of elements from a sorted set and filters them based on allow, block, and filter sets.
 -- @usage: redis-cli EVAL "$(cat vfind.lua)" <numkeys> <zset_key> [allow_keys...] [blocked_keys...] [filter_keys...] <offset> <count> <upto> <direction> <include_blocked> <allow_count> <block_count> <filter_count>
 -- @return: list of results, and count of results
 
--- quicksort functions as require() is disabled by redis
+-- quicksort helper functions as require() is disabled by redis
 --[[
  * Three-way partition function for quicksort
  *
@@ -195,42 +197,52 @@ local function vfindByZSet(zset_key, filter_keys, filter_count, allow_keys, allo
 end
 
 -- main function
-local zset_key = KEYS[1]
+local function vfindCommand(keys, args)
+    local zset_key = keys[1]
 
-local offset = tonumber(ARGV[1])
-local count = tonumber(ARGV[2])
-local upto = tonumber(ARGV[3])
-local direction = ARGV[4]
-local include_blocked = (ARGV[5] == "withblocked")
-local allow_count = tonumber(ARGV[6])
-local block_count = tonumber(ARGV[7])
-local filter_count = tonumber(ARGV[8])
+    local offset = tonumber(args[1])
+    local count = tonumber(args[2])
+    local upto = tonumber(args[3])
+    local direction = args[4]
+    local include_blocked = (args[5] == "withblocked")
+    local allow_count = tonumber(args[6])
+    local block_count = tonumber(args[7])
+    local filter_count = tonumber(args[8])
 
-local allow_keys = {}
-for i = 1, allow_count do
-    allow_keys[i] = KEYS[i + 1]
-end
-
-local block_keys = {}
-for i = 1, block_count do
-    block_keys[i] = KEYS[allow_count + i + 1]
-end
-
-local filter_keys = {}
-for i = 1, filter_count do
-    filter_keys[i] = KEYS[allow_count + block_count + i + 1]
-end
-
-if filter_count > 0 and filter_keys[1] then
-    quicksort(filter_keys, compare_sets_by_cardinality)
-    local size = redis.call("SCARD", filter_keys[1])
-    local ratio = redis.call("SCARD", zset_key) / size
-
-    if (size < 100 and ratio > 1) or (size < 500 and ratio > 2) or (size < 2000 and ratio > 3) then
-        return vfindBySmallestFilter(zset_key, filter_keys, filter_count, allow_keys, allow_count, block_keys,
-            block_count, offset, count, upto, direction, include_blocked)
+    local allow_keys = {}
+    for i = 1, allow_count do
+        allow_keys[i] = keys[i + 1]
     end
+
+    local block_keys = {}
+    for i = 1, block_count do
+        block_keys[i] = keys[allow_count + i + 1]
+    end
+
+    local filter_keys = {}
+    for i = 1, filter_count do
+        filter_keys[i] = keys[allow_count + block_count + i + 1]
+    end
+
+    if filter_count > 0 and filter_keys[1] then
+        quicksort(filter_keys, compare_sets_by_cardinality)
+        local size = redis.call("SCARD", filter_keys[1])
+        local ratio = redis.call("SCARD", zset_key) / size
+
+        if (size < 100 and ratio > 1) or (size < 500 and ratio > 2) or (size < 2000 and ratio > 3) then
+            return vfindBySmallestFilter(zset_key, filter_keys, filter_count, allow_keys, allow_count, block_keys,
+                block_count, offset, count, upto, direction, include_blocked)
+        end
+    end
+
+    return vfindByZSet(zset_key, filter_keys, filter_count, allow_keys, allow_count, block_keys, block_count, offset,
+        count, upto, direction, include_blocked)
 end
 
-return vfindByZSet(zset_key, filter_keys, filter_count, allow_keys, allow_count, block_keys, block_count, offset, count,
-    upto, direction, include_blocked)
+
+redis.register_function {
+    function_name = 'vfind',
+    callback = vfindCommand,
+    flags = { 'no-writes' },
+    description = "Retrieves elements from a sorted set with filtering capabilities. Read-only function."
+}
