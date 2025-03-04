@@ -286,7 +286,7 @@ static void vfindBySmallestFilter(client *c, vfindData *vfind)
     setTypeReleaseIterator(si);
 
     /**
-     * Output with paging
+     * Output with paging, up to specified count
      */
     if (found > vfind->offset)
     {

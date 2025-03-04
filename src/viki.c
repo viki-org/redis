@@ -35,6 +35,9 @@ int replyWithDetail(client *c, sds item, int blocked)
  * Returns an array of robj pointers representing sets from the client's database,
  * Ignores any misses and updates the count to reflect the number of successfully loaded sets.
  * If the initial count is zero, the function returns NULL.
+ *
+ * @param offset: argument indices offset for starting point of sets
+ * @param count: Max number of sets to retrieve
  */
 robj **loadSetArrayIgnoreMiss(client *c, int offset, long *count)
 {
@@ -64,6 +67,9 @@ robj **loadSetArrayIgnoreMiss(client *c, int offset, long *count)
     return array;
 }
 
+/**
+ * if any key is invalid, the entire operation fails and no valid sets are returned
+ */
 robj **loadSetArray(client *c, int offset, long count)
 {
     if (count == 0)

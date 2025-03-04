@@ -81,7 +81,7 @@ local function quicksort(list, less_than, choose_pivot)
 end
 
 -- helper functions
-local function is_in_all_filters(start_index, item, filter_keys, filter_count)
+local function isMemberOfAllSets(start_index, item, filter_keys, filter_count)
     for i = start_index, filter_count do
         if redis.call("SISMEMBER", filter_keys[i], item) == 0 then
             return false
@@ -90,26 +90,25 @@ local function is_in_all_filters(start_index, item, filter_keys, filter_count)
     return true
 end
 
-local function is_blocked(item, block_keys, block_count)
-    for i = 1, block_count do
-        if redis.call("SISMEMBER", block_keys[i], item) == 1 then
+local function isMemberOfAnySet(count, keys, item)
+    for i = 1, count do
+        if redis.call("SISMEMBER", keys[i], item) == 1 then
             return true
         end
     end
     return false
 end
 
-local function is_allowed(item, allow_keys, allow_count)
-    if allow_count == 0 then return true end
-    for i = 1, allow_count do
-        if redis.call("SISMEMBER", allow_keys[i], item) == 1 then
-            return true
-        end
-    end
+local function isBlocked(item, allow_count, allow_keys, block_count, block_keys)
+    if block_count == 0 then return false end
+    if isMemberOfAnySet(allow_count, allow_keys, item) then return false end
+    if isMemberOfAnySet(block_count, block_keys, item) then return true end
     return false
 end
 
-local function compare_sets_by_cardinality(a, b)
+
+
+local function compareSetsByCardinality(a, b)
     return redis.call("SCARD", a) < redis.call("SCARD", b)
 end
 
@@ -121,20 +120,16 @@ local function vfindBySmallestFilter(zset_key, filter_keys, filter_count, allow_
 
     for _, item in ipairs(zset) do
         -- check if element exists in the zset
-        if redis.call("ZSCORE", zset_key, item) == -1 then
+        if redis.call("ZSCORE", zset_key, item) == false then
             goto continue
         end
 
-        if filter_count > 0 and not is_in_all_filters(2, item, filter_keys, filter_count) then
+        if filter_count > 0 and not isMemberOfAllSets(2, item, filter_keys, filter_count) then
             goto continue
         end
 
-        local is_item_blocked = is_blocked(item, block_keys, block_count)
+        local is_item_blocked = isBlocked(item, allow_count, allow_keys, block_count, block_keys)
         if is_item_blocked and not include_blocked then
-            goto continue
-        end
-
-        if allow_count > 0 and not is_allowed(item, allow_keys, allow_count) then
             goto continue
         end
 
@@ -165,16 +160,12 @@ local function vfindByZSet(zset_key, filter_keys, filter_count, allow_keys, allo
     for i = 1, #zset do
         local item = zset[i]
 
-        if filter_count > 0 and not is_in_all_filters(1, item, filter_keys, filter_count) then
+        if filter_count > 0 and not isMemberOfAllSets(1, item, filter_keys, filter_count) then
             goto continue
         end
 
-        local is_item_blocked = is_blocked(item, block_keys, block_count)
+        local is_item_blocked = isBlocked(item, allow_count, allow_keys, block_count, block_keys)
         if is_item_blocked and not include_blocked then
-            goto continue
-        end
-
-        if allow_count > 0 and not is_allowed(item, allow_keys, allow_count) then
             goto continue
         end
 
@@ -225,7 +216,7 @@ local function vfindCommand(keys, args)
     end
 
     if filter_count > 0 and filter_keys[1] then
-        quicksort(filter_keys, compare_sets_by_cardinality)
+        quicksort(filter_keys, compareSetsByCardinality)
         local size = redis.call("SCARD", filter_keys[1])
         local ratio = redis.call("SCARD", zset_key) / size
 
